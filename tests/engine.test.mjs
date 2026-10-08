@@ -103,6 +103,31 @@ test("decoder masked grid and illustrative next-token softmax match the locked v
   close(nt.probs, fixture.decoder.nextTokenProbs, "nextTokenProbs");
 });
 
+test("multi-head: two heads with their own projections, Concat is h·d_v = 4, W_O maps back to d_model", () => {
+  const m = model(), H = E.PARAMS.heads;
+  assert.notDeepEqual(H[0].WQ, H[1].WQ);
+  assert.notDeepEqual(H[0].WK, H[1].WK);
+  assert.notDeepEqual(H[0].WV, H[1].WV);
+  // the patterns differ because the projections differ (no styling involved): head 1 peaks on "animal", head 2 on "because"
+  const argmax = (row) => row.indexOf(Math.max(...row));
+  assert.equal(tokens[argmax(m.heads[0].A[FOCUS])], "animal");
+  assert.equal(tokens[argmax(m.heads[1].A[FOCUS])], "because");
+  for (let i = 0; i < tokens.length; i++) {
+    assert.equal(m.Concat[i].length, E.CONFIG.nHeads * E.CONFIG.dV);
+    assert.deepEqual([...m.Concat[i]], [...m.heads[0].Z[i], ...m.heads[1].Z[i]]);
+    assert.equal(E.PARAMS.WO.length, E.CONFIG.nHeads * E.CONFIG.dV);
+    assert.equal(E.PARAMS.WO[0].length, E.CONFIG.dModel);
+    const direct = E.PARAMS.WO[0].map((_, c) => m.Concat[i].reduce((acc, v, r) => acc + v * E.PARAMS.WO[r][c], 0));
+    m.MH[i].forEach((v, c) => assert.ok(Math.abs(v - direct[c]) < 1e-14));
+    // encoder layer: residual + LayerNorm, FFN 4 → 8 → ReLU → 4, residual + LayerNorm
+    m.R1[i].forEach((v, d) => assert.equal(v, m.X[i][d] + m.MH[i][d]));
+    assert.equal(m.Hpre[i].length, E.CONFIG.dFF);
+    m.Hid[i].forEach((v, k) => assert.equal(v, Math.max(0, m.Hpre[i][k])));
+    assert.equal(m.F[i].length, E.CONFIG.dModel);
+    assert.equal(m.LN2[i].out.length, E.CONFIG.dModel);
+  }
+});
+
 test("softmax rows sum to 1, scaling divides by √d_k, z = Σ α v", () => {
   for (const [pos, scale] of [[true, Math.SQRT2], [false, Math.SQRT2], [true, 1], [false, 1]]) {
     const m = model(pos, scale);
@@ -183,6 +208,7 @@ function guidedChecks(p) {
     prodOK(`Scene 7: α_animal·v_animal[${c}]`, H.A[FOCUS][ANIMAL], p, H.V[ANIMAL][c], p, H.weighted[FOCUS][ANIMAL][c]);
     m.heads.forEach((Hh, h) => sumOK(`Scene 7: head ${h + 1} z[${c}]`, Hh.weighted[FOCUS].map((w) => w[c]), Hh.Z[FOCUS][c]));
   });
+  m.R1[FOCUS].forEach((r, d) => sumOK(`Scene 9: x[${d}] + MultiHead[${d}] = R1`, [m.X[FOCUS][d], m.MH[FOCUS][d]], r));
   return fails;
 }
 test("guided-path arithmetic reads exactly at 2 decimals", () => assert.deepEqual(guidedChecks(2), []));

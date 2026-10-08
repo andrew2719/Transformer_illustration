@@ -98,6 +98,38 @@ body.idle { cursor: none; }
 .bar { fill: rgba(214, 226, 244, 0.88); }
 .bar-glow { fill: rgba(150, 190, 240, 0.16); }
 
+/* ---- heads, blocks, towers (Scenes 8–10) ---- */
+.lane-tag { font-family: var(--font-sans); fill: var(--ink-dim); letter-spacing: 0.24em; }
+.box-r { fill: rgba(9, 15, 29, 0.88); stroke: rgba(207, 217, 235, 0.42); stroke-width: 1.4; }
+.box-halo { fill: none; stroke: rgba(160, 205, 255, 0.75); stroke-width: 2.2; filter: drop-shadow(0 0 12px rgba(120, 180, 255, 0.75)); }
+.box-label { font-family: var(--font-sans); fill: var(--ink); letter-spacing: 0.02em; }
+.blk-attn .box-r { stroke: rgba(207, 217, 235, 0.72); }
+.blk-norm .box-r { fill: rgba(9, 15, 29, 0.78); stroke: rgba(207, 217, 235, 0.3); }
+.blk-norm .box-label { fill: var(--ink-dim); }
+.blk-io .box-r { stroke: rgba(207, 217, 235, 0.3); }
+.blk-io .box-label { fill: var(--ink-dim); }
+.blk-mask .box-r { stroke: rgba(224, 112, 122, 0.8); }
+.frame .box-r { fill: rgba(150, 175, 220, 0.03); stroke: rgba(207, 217, 235, 0.2); }
+.ghost .box-r { fill: rgba(9, 15, 29, 0.6); stroke: rgba(207, 217, 235, 0.15); }
+.callout .box-r { fill: rgba(9, 15, 29, 0.55); stroke: rgba(207, 217, 235, 0.16); stroke-dasharray: 3 6; }
+.res { stroke: #b3c4e2; }
+.res-glow { stroke: #8fb1e6; }
+.vec-plate { fill: rgba(8, 14, 28, 0.97); filter: url(#soft); }
+.glyph-c { fill: rgba(9, 15, 29, 0.9); stroke: rgba(207, 217, 235, 0.55); stroke-width: 1.3; }
+.glyph-p { fill: none; stroke: var(--ink); stroke-width: 1.6; stroke-linecap: round; }
+.glyph-wave .glyph-c { stroke: rgba(171, 141, 251, 0.7); }
+.glyph-wave .glyph-p { stroke: var(--pe); }
+.pe-text { font-family: var(--font-sans); fill: var(--pe); }
+.cell .box-r { fill: rgba(207, 217, 235, 0.05); stroke: rgba(207, 217, 235, 0.16); stroke-width: 1; }
+.cell-masked .box-r { fill: rgba(224, 112, 122, 0.16); stroke: rgba(224, 112, 122, 0.55); stroke-width: 1; }
+.num.masked, .masked { fill: var(--mask); }
+.pbar { fill: rgba(214, 226, 244, 0.8); }
+.lead { fill: none; stroke: rgba(160, 205, 255, 0.35); stroke-width: 1.1; stroke-dasharray: 2 6; }
+.ffn-edge { fill: none; stroke: rgba(170, 190, 225, 0.28); stroke-width: 0.9; }
+.dims-text { font-family: var(--font-serif); fill: var(--ink-dim); }
+.note-text { font-family: var(--font-sans); fill: var(--ink-dim); letter-spacing: 0.02em; font-style: italic; }
+.m-neutral .col-hl { stroke: rgba(207, 217, 235, 0.55); }
+
 /* ---- HTML chrome (sized in viewBox units via --u) ---- */
 #controls { position: absolute; left: 50%; bottom: calc(30 * var(--u)); transform: translateX(-50%); display: flex; align-items: center; gap: calc(10 * var(--u)); transition: opacity 0.5s; }
 #controls button { width: max(30px, calc(44 * var(--u))); height: max(30px, calc(44 * var(--u))); border-radius: 999px; border: 1px solid rgba(207, 217, 235, 0.16); background: rgba(8, 13, 25, 0.45); color: var(--ink-dim); display: grid; place-items: center; cursor: pointer; padding: 0; font: inherit; font-size: max(12px, calc(17 * var(--u))); line-height: 1; }
@@ -119,6 +151,23 @@ body.idle #controls, body.idle #timeline { opacity: 0.12; }
 .chip-btn { position: absolute; border: 1px solid rgba(171, 141, 251, 0.35); background: rgba(8, 13, 25, 0.6); color: var(--pe); border-radius: 999px; font: inherit; font-size: max(11px, calc(15 * var(--u))); letter-spacing: 0.06em; padding: max(4px, calc(6 * var(--u))) max(10px, calc(14 * var(--u))); cursor: pointer; transition: opacity 0.4s; }
 .chip-btn[hidden] { display: none; }
 #pe-math-btn { left: calc(44 * var(--u)); top: calc(962 * var(--u)); }
+#explore-ui { position: absolute; left: 50%; top: calc(166 * var(--u)); transform: translateX(-50%); display: flex; gap: calc(26 * var(--u)); align-items: center; font-size: max(11px, calc(16 * var(--u))); white-space: nowrap; }
+#explore-ui[hidden] { display: none; }
+#explore-ui .seg { display: flex; align-items: center; gap: 0; }
+#explore-ui .seg-lab { color: var(--ink-faint); letter-spacing: 0.12em; text-transform: uppercase; font-size: 0.8em; margin-right: calc(10 * var(--u)); }
+#explore-ui button { font: inherit; color: var(--ink-dim); background: rgba(8, 13, 25, 0.6); border: 1px solid rgba(207, 217, 235, 0.18); padding: max(3px, calc(5 * var(--u))) max(9px, calc(13 * var(--u))); cursor: pointer; margin-left: -1px; }
+#explore-ui .seg button:first-of-type { border-radius: 999px 0 0 999px; }
+#explore-ui .seg button:last-of-type { border-radius: 0 999px 999px 0; }
+#explore-ui button[aria-pressed="true"] { color: var(--ink); background: rgba(76, 201, 245, 0.14); border-color: rgba(76, 201, 245, 0.55); position: relative; }
+#explore-ui button:focus-visible, #explore-ui input:focus-visible { outline: 2px solid var(--q); outline-offset: 2px; }
+#explore-ui input[type="range"] { width: calc(150 * var(--u)); min-width: 90px; margin-left: calc(14 * var(--u)); accent-color: var(--q); }
+#explore-ui input[disabled] { opacity: 0.3; }
+#explore-ui output { color: var(--ink-dim); min-width: 4.2em; margin-left: calc(8 * var(--u)); font-variant-numeric: tabular-nums; }
+#ex-whatif { color: var(--ink); border: 1px dashed rgba(207, 217, 235, 0.5); border-radius: 999px; padding: 1px 10px; margin-left: calc(8 * var(--u)); font-size: 0.85em; }
+#ex-whatif[hidden] { display: none; }
+.ex-hit { fill: rgba(207, 217, 235, 0); pointer-events: none; cursor: pointer; }
+body.exploring .ex-hit { pointer-events: all; }
+body.exploring .ex-hit:hover { fill: rgba(207, 217, 235, 0.05); }
 #pe-math { position: absolute; left: calc(44 * var(--u)); bottom: calc(130 * var(--u)); background: rgba(8, 12, 24, 0.94); border: 1px solid rgba(171, 141, 251, 0.35); border-radius: 10px; padding: calc(16 * var(--u)) calc(22 * var(--u)); font-family: var(--font-serif); font-size: max(13px, calc(24 * var(--u))); color: var(--ink); line-height: 1.6; }
 #pe-math[hidden] { display: none; }
 #pe-math .note { font-family: var(--font-sans); font-size: 0.62em; color: var(--ink-dim); margin-top: 0.4em; letter-spacing: 0.02em; }
@@ -158,12 +207,18 @@ body.idle #controls, body.idle #timeline { opacity: 0.12; }
       <desc id="stage-desc">An animated walkthrough of how one token's representation is built and projected into query, key and value vectors.</desc>
       <defs>
         <radialGradient id="g-node"><stop offset="0" stop-color="#cfd9eb" stop-opacity="0.5"/><stop offset="1" stop-color="#cfd9eb" stop-opacity="0"/></radialGradient>
+        <radialGradient id="g-n"><stop offset="0" stop-color="#cfd9eb" stop-opacity="0.55"/><stop offset="1" stop-color="#cfd9eb" stop-opacity="0"/></radialGradient>
         <radialGradient id="g-pe"><stop offset="0" stop-color="#ab8dfb" stop-opacity="0.55"/><stop offset="1" stop-color="#ab8dfb" stop-opacity="0"/></radialGradient>
         <radialGradient id="g-q"><stop offset="0" stop-color="#4cc9f5" stop-opacity="0.6"/><stop offset="1" stop-color="#4cc9f5" stop-opacity="0"/></radialGradient>
         <radialGradient id="g-k"><stop offset="0" stop-color="#f6a940" stop-opacity="0.6"/><stop offset="1" stop-color="#f6a940" stop-opacity="0"/></radialGradient>
         <radialGradient id="g-v"><stop offset="0" stop-color="#55d8a0" stop-opacity="0.6"/><stop offset="1" stop-color="#55d8a0" stop-opacity="0"/></radialGradient>
+        <filter id="soft" x="-20%" y="-60%" width="140%" height="220%"><feGaussianBlur stdDeviation="5"/></filter>
+        <marker id="arr" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto"><path d="M 0 1.2 L 9 5 L 0 8.8 z" fill="#9fb3d6"/></marker>
+        <marker id="arr-q" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto"><path d="M 0 1.2 L 9 5 L 0 8.8 z" fill="#4cc9f5"/></marker>
+        <marker id="arr-k" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto"><path d="M 0 1.2 L 9 5 L 0 8.8 z" fill="#f6a940"/></marker>
+        <marker id="arr-v" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto"><path d="M 0 1.2 L 9 5 L 0 8.8 z" fill="#55d8a0"/></marker>
       </defs>
-      <g id="cam"><g id="l-back"></g><g id="l-main"></g><g id="l-fx"></g></g>
+      <g id="cam"><g id="l-under"></g><g id="l-back"></g><g id="l-main"></g><g id="l-fx"></g></g>
       <g id="l-hud"></g>
     </svg>
     <div id="overlay">
@@ -173,6 +228,19 @@ body.idle #controls, body.idle #timeline { opacity: 0.12; }
         <div><i>PE</i>(<i>pos</i>, 2<i>i</i>+1) = cos(<i>pos</i> / 10000<sup>2<i>i</i>/<i>d</i><sub>model</sub></sup>)</div>
         <div class="note">Vaswani et al. 2017, §3.5 · here d<sub>model</sub> = 4, so the two frequencies are 1 and 1/100</div>
       </div>
+      <div id="explore-ui" role="group" aria-label="Explore controls" hidden>
+        <div class="seg" role="group" aria-label="Attention head">
+          <button type="button" data-head="0" aria-pressed="true">Head 1</button><button type="button" data-head="1" aria-pressed="false">Head 2</button>
+        </div>
+        <div class="seg" role="group" aria-label="Positional encoding">
+          <span class="seg-lab">Position</span><button type="button" data-pos="1" aria-pressed="true">On</button><button type="button" data-pos="0" aria-pressed="false">Off</button>
+        </div>
+        <div class="seg" role="group" aria-label="Attention scale">
+          <span class="seg-lab">Scale</span><button type="button" data-scale="paper" aria-pressed="true">÷ √d<sub>k</sub></button><button type="button" data-scale="none" aria-pressed="false">none</button><button type="button" data-scale="custom" aria-pressed="false">custom</button>
+          <input id="ex-scale" type="range" min="-2" max="3" step="0.05" value="0.5" aria-label="Custom divisor, log scale" disabled><output id="ex-scale-out" for="ex-scale">÷ 1.41</output>
+          <span id="ex-whatif" hidden>What-if experiment</span>
+        </div>
+      </div>
       <div id="controls" role="toolbar" aria-label="Presentation controls">
         <button id="btn-prev" class="main" type="button" aria-label="Previous step (Left arrow)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.5 4.5 8 12l7.5 7.5-1.6 1.6L4.8 12l9.1-9.1z"/></svg></button>
         <button id="btn-play" class="main" type="button" aria-label="Play (Space)"><svg viewBox="0 0 24 24" aria-hidden="true"><path id="play-icon" d="M7 4.5v15l12-7.5z"/></svg></button>
@@ -180,7 +248,7 @@ body.idle #controls, body.idle #timeline { opacity: 0.12; }
         <span class="sep"></span>
         <button id="btn-calc" type="button" aria-pressed="false" aria-label="Show calculation (C)" title="Show calculation (C)">Σ</button>
         <button id="btn-restart" type="button" aria-label="Restart (R)" title="Restart (R)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5a7 7 0 1 1-6.6 4.7l2 .7A4.9 4.9 0 1 0 12 7.1V10L7.5 6 12 2z"/></svg></button>
-        <button id="btn-explore" class="wide" type="button" aria-label="Explore mode (E)" title="Explore mode (E)" disabled>EXPLORE</button>
+        <button id="btn-explore" class="wide" type="button" aria-label="Explore mode (E)" title="Explore mode (E)" aria-pressed="false">EXPLORE</button>
         <button id="btn-full" type="button" aria-label="Fullscreen (F)" title="Fullscreen (F)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h6v2H6v4H4zm10 0h6v6h-2V6h-4zM4 14h2v4h4v2H4zm14 0h2v6h-6v-2h4z"/></svg></button>
         <button id="btn-about" type="button" aria-label="About this demo" title="About this demo">i</button>
       </div>
@@ -536,7 +604,12 @@ body.idle #controls, body.idle #timeline { opacity: 0.12; }
   const FOCUS = TOKENS.indexOf(E.GUIDED.focus);
   const MODEL = E.computeModel(E.PARAMS, { tokens: TOKENS });
   // Values derived on screen from engine output (e.g. the displayed Σα) live under "derived".
-  const SRC = { ...MODEL, params: E.PARAMS, derived: { alphaSum: MODEL.heads[0].A[FOCUS].reduce((a, b) => a + b, 0) } };
+  // Scene 10: the toy decoder's masked self-attention grid and the illustrative next-token softmax
+  const DEC = {
+    g4: E.maskedDecoderGrid(E.PARAMS.decoder.inputs),
+    next: E.nextTokenDistribution(),
+  };
+  const SRC = { ...MODEL, params: E.PARAMS, dec: DEC, derived: { alphaSum: MODEL.heads[0].A[FOCUS].reduce((a, b) => a + b, 0) } };
   const val = (path) => path.split(".").reduce((o, k) => (o == null ? undefined : o[k]), SRC);
 
   // ---------------------------------------------------------------------------- UI STATE
@@ -580,11 +653,11 @@ body.idle #controls, body.idle #timeline { opacity: 0.12; }
     }
     return NUMW.get(key);
   }
-  // Tiny math markup: \i{x} italic, _{it} subscript, ^{T} superscript.
-  function renderRich(textEl, src, basePx) {
-    while (textEl.firstChild) textEl.firstChild.remove();
+  // Tiny math markup: \i{x} italic, _{it} subscript, ^{T} superscript. appendRich continues from a
+  // baseline shift and can colour its pieces, so one <text> can hold several coloured parts.
+  function appendRich(textEl, src, basePx, shift = 0, cls = null) {
     const re = /\\i\{([^}]*)\}|_\{([^}]*)\}|\^\{([^}]*)\}|([^\\_^]+)/g;
-    let shift = 0, m;
+    let m;
     while ((m = re.exec(src))) {
       let text, italic = false, target = 0, small = false;
       if (m[1] !== undefined) { text = m[1]; italic = true; }
@@ -592,11 +665,17 @@ body.idle #controls, body.idle #timeline { opacity: 0.12; }
       else if (m[3] !== undefined) { text = m[3]; target = -0.42 * basePx; small = true; }
       else text = m[4];
       const ts = svg("tspan", {}, textEl);
+      if (cls) ts.setAttribute("class", cls);
       if (italic) ts.setAttribute("font-style", "italic");
       if (small) ts.setAttribute("font-size", (basePx * 0.66).toFixed(1));
       if (target !== shift) { ts.setAttribute("dy", (target - shift).toFixed(1)); shift = target; }
       ts.textContent = text;
     }
+    return shift;
+  }
+  function renderRich(textEl, src, basePx) {
+    while (textEl.firstChild) textEl.firstChild.remove();
+    appendRich(textEl, src, basePx);
   }
 
   // ---------------------------------------------------------------------------- ANIMATION CLOCK & TWEENS
@@ -691,6 +770,8 @@ body.idle #controls, body.idle #timeline { opacity: 0.12; }
       this.apply();
     }
     set(props) { Object.assign(this, props); this.apply(); return this; }
+    // neutral values for properties that only some layouts set; applied whenever a layout shows the object
+    layoutDefaults() { return {}; }
     apply() {
       const o = Math.max(0, Math.min(1, this.o));
       this.el.setAttribute("transform", `translate(${r2(this.x)} ${r2(this.y)})` + (this.r ? ` rotate(${r2(this.r)})` : "") + (this.s !== 1 ? ` scale(${this.s.toFixed(4)})` : ""));
@@ -721,17 +802,20 @@ body.idle #controls, body.idle #timeline { opacity: 0.12; }
   }
 
   class TextObj extends Node2D {
-    constructor(id, layer, { text = "", rich = null, cls = "", size = 30, anchor = "middle", textCls = "" } = {}) {
+    constructor(id, layer, { text = "", rich = null, parts = null, cls = "", size = 30, anchor = "middle", textCls = "" } = {}) {
       super(id, layer, cls);
       this.size = size;
       this.textCls = textCls;
       this.t = svg("text", { "text-anchor": anchor, "font-size": size }, this.el);
       if (textCls) this.t.setAttribute("class", textCls);
-      if (rich !== null) renderRich(this.t, rich, size); else this.t.textContent = text;
+      if (parts) parts.reduce((shift, [src, pcls]) => appendRich(this.t, src, size, shift, pcls), 0);
+      else if (rich !== null) renderRich(this.t, rich, size); else this.t.textContent = text;
     }
     width() { return this.t.getComputedTextLength(); }
     morphExtra(t) {
       if (t.textCls && t.textCls !== this.textCls) { this.textCls = t.textCls; this.t.setAttribute("class", t.textCls); }
+      if (t.text !== undefined && t.text !== this.t.textContent) this.t.textContent = t.text;
+      if (t.rich !== undefined && t.rich !== this.richSrc) { this.richSrc = t.rich; renderRich(this.t, t.rich, this.size); }
     }
   }
 
@@ -760,6 +844,7 @@ body.idle #controls, body.idle #timeline { opacity: 0.12; }
   }
 
   class DotObj extends Node2D {
+    layoutDefaults() { return { s: 1 }; }
     constructor(id, layer, { r = 5, cls = "f-n", glow = null } = {}) {
       super(id, layer, "dot");
       if (glow) svg("circle", { r: r * 3.2, fill: `url(#${glow})` }, this.el);
@@ -767,21 +852,65 @@ body.idle #controls, body.idle #timeline { opacity: 0.12; }
     }
   }
 
-  // Path with an animatable "draw" fraction (pathLength = 1 makes dash maths trivial).
+  // Path with an animatable "draw" fraction (pathLength = 1 makes dash maths trivial). A path given as
+  // `geo` — a chain of cubic Béziers [x0,y0, c1x,c1y, c2x,c2y, x1,y1, …] — can also morph its shape.
+  const curveD = (g) => {
+    let d = `M ${r2(g[0])} ${r2(g[1])}`;
+    for (let i = 2; i + 5 < g.length; i += 6) d += ` C ${r2(g[i])} ${r2(g[i + 1])}, ${r2(g[i + 2])} ${r2(g[i + 3])}, ${r2(g[i + 4])} ${r2(g[i + 5])}`;
+    return d;
+  };
+  const sameNums = (a, b) => !!a && !!b && a.length === b.length && a.every((v, i) => Math.abs(v - b[i]) < 1e-6);
+  // A polyline with rounded corners as a cubic chain, so wires drawn this way can morph too.
+  function polyGeo(pts, rad = 16) {
+    const g = [pts[0][0], pts[0][1]];
+    const line = (a, b) => g.push(a[0] + (b[0] - a[0]) / 3, a[1] + (b[1] - a[1]) / 3, a[0] + (2 * (b[0] - a[0])) / 3, a[1] + (2 * (b[1] - a[1])) / 3, b[0], b[1]);
+    let cur = pts[0];
+    for (let i = 1; i < pts.length - 1; i++) {
+      const [pv, pt, nx] = [pts[i - 1], pts[i], pts[i + 1]];
+      const d1 = Math.hypot(pt[0] - pv[0], pt[1] - pv[1]) || 1, d2 = Math.hypot(nx[0] - pt[0], nx[1] - pt[1]) || 1;
+      const rr = Math.min(rad, d1 / 2, d2 / 2);
+      const a = [pt[0] + ((pv[0] - pt[0]) * rr) / d1, pt[1] + ((pv[1] - pt[1]) * rr) / d1];
+      const b = [pt[0] + ((nx[0] - pt[0]) * rr) / d2, pt[1] + ((nx[1] - pt[1]) * rr) / d2];
+      line(cur, a);
+      g.push(a[0] + (pt[0] - a[0]) * 0.5523, a[1] + (pt[1] - a[1]) * 0.5523, b[0] + (pt[0] - b[0]) * 0.5523, b[1] + (pt[1] - b[1]) * 0.5523, b[0], b[1]);
+      cur = b;
+    }
+    line(cur, pts[pts.length - 1]);
+    return g;
+  }
   class PathObj extends Node2D {
-    constructor(id, layer, { d, cls = "wire s-n", glowCls = null } = {}) {
+    layoutDefaults() { return { x: 0, y: 0, s: 1 }; } // paths are drawn in stage coordinates unless a layout maps them
+    constructor(id, layer, { d = null, geo = null, cls = "wire s-n", glowCls = null, arrow = null } = {}) {
       super(id, layer, "path");
       this.draw = 1;
-      if (glowCls) this.g = svg("path", { d, pathLength: 1, class: glowCls }, this.el);
-      this.p = svg("path", { d, pathLength: 1, class: cls }, this.el);
+      this.arrow = arrow;
+      this.geoA = geo; this.geoB = geo; this.gt = 1;
+      const dd = geo ? curveD(geo) : d;
+      this.dNow = dd;
+      if (glowCls) this.g = svg("path", { d: dd, pathLength: 1, class: glowCls }, this.el);
+      this.p = svg("path", { d: dd, pathLength: 1, class: cls }, this.el);
+    }
+    geoNow() {
+      const a = this.geoA, b = this.geoB;
+      if (!b || this.gt >= 1 || !a) return b;
+      return b.map((v, i) => a[i] + (v - a[i]) * this.gt);
     }
     apply() {
       super.apply();
       if (!this.p) return;
+      if (this.geoB) {
+        const d = curveD(this.geoNow());
+        if (d !== this.dNow) { this.dNow = d; this.p.setAttribute("d", d); if (this.g) this.g.setAttribute("d", d); }
+      }
       const off = (1 - this.draw).toFixed(4);
       for (const p of [this.p, this.g]) if (p) { p.style.strokeDasharray = "1 1"; p.style.strokeDashoffset = off; }
+      if (this.arrow) { const on = this.draw > 0.985; if (on !== this.arrowOn) { this.arrowOn = on; if (on) this.p.setAttribute("marker-end", `url(#${this.arrow})`); else this.p.removeAttribute("marker-end"); } }
     }
     morphExtra(t, { dur, delay, appearing, ps }) {
+      if (t.geo && !sameNums(t.geo, this.geoB)) {
+        if (appearing || !dur || !this.geoB || t.geo.length !== this.geoB.length) { this.geoA = this.geoB = t.geo; this.gt = 1; this.apply(); }
+        else { this.geoA = this.geoNow(); this.geoB = t.geo; this.gt = 0; ps.push(tween(this, { gt: 1 }, { dur, delay })); }
+      }
       if (t.draw !== undefined && t.draw !== this.draw) {
         if (appearing || !dur) { this.draw = t.draw; this.apply(); } else ps.push(tween(this, { draw: t.draw }, { dur, delay }));
       }
@@ -791,12 +920,14 @@ body.idle #controls, body.idle #timeline { opacity: 0.12; }
 
   // Bracketed vector whose cells can move independently (column ↔ row morphs) and flip values.
   class VectorObj extends Node2D {
+    layoutDefaults() { return { s: 1 }; }
     constructor(id, layer, { n, cls = "v-neutral", size = 30, gap = 44, orient = "col", src = null, d = 2, cellW = null, hlCls = "hl-n" }) {
       super(id, layer, `vec ${cls}`);
       Object.assign(this, { n, size, gap, orient, cls, hlCls, src: null, d });
       this.cellWFixed = cellW;
       this.cellW = this.cellWFor(d);
-      this.bw = 0; this.bh = 0;
+      this.bw = 0; this.bh = 0; this.pl = 0; // pl: opacity of a soft backing plate (hides wires passing behind)
+      this.plate = svg("rect", { class: "vec-plate", rx: 10 }, this.el);
       this.hlG = svg("g", {}, this.el);
       this.brL = svg("path", { class: "bracket" }, this.el);
       this.brR = svg("path", { class: "bracket" }, this.el);
@@ -839,6 +970,8 @@ body.idle #controls, body.idle #timeline { opacity: 0.12; }
       super.apply();
       if (!this.brL) return;
       const w = this.bw, h = this.bh, lip = Math.min(9, w * 0.3);
+      this.plate.style.opacity = this.pl.toFixed(3);
+      if (this.pl > 0) for (const [k, v] of [["x", -w - 6], ["y", -h - 4], ["width", 2 * w + 12], ["height", 2 * h + 8]]) this.plate.setAttribute(k, r2(v));
       this.brL.setAttribute("d", `M ${r2(-w + lip)} ${r2(-h)} H ${r2(-w)} V ${r2(h)} H ${r2(-w + lip)}`);
       this.brR.setAttribute("d", `M ${r2(w - lip)} ${r2(-h)} H ${r2(w)} V ${r2(h)} H ${r2(w - lip)}`);
     }
@@ -869,6 +1002,8 @@ body.idle #controls, body.idle #timeline { opacity: 0.12; }
     morphExtra(t, { dur, delay, appearing, ps }) {
       if (t.cls && t.cls !== this.cls) this.setCls(t.cls);
       if (t.hlCls && t.hlCls !== this.hlCls) this.setHlCls(t.hlCls);
+      const pl = t.pl ?? 0;
+      if (pl !== this.pl) { if (appearing || !dur) { this.pl = pl; this.apply(); } else ps.push(tween(this, { pl }, { dur, delay })); }
       const orient = t.orient ?? this.orient, gap = t.gap ?? this.gap, d = t.d ?? this.d;
       if (orient !== this.orient || gap !== this.gap || d !== this.d || appearing) {
         const tg = this.shape(orient, gap, d);
@@ -987,9 +1122,9 @@ body.idle #controls, body.idle #timeline { opacity: 0.12; }
       this.rect.setAttribute("width", r2(w));
       this.glowR.setAttribute("width", r2(w + 6));
     }
-    setAlphaSrc(path) { this.rect.dataset.alpha = path; this.rect.dataset.kind = "bar"; }
+    setAlphaSrc(path, kind = "bar") { this.rect.dataset.alpha = path; this.rect.dataset.kind = kind; }
     morphExtra(t, { dur, delay, appearing, ps }) {
-      if (t.alphaSrc) this.setAlphaSrc(t.alphaSrc);
+      if (t.alphaSrc) this.setAlphaSrc(t.alphaSrc, t.kind ?? "bar");
       if (t.w !== undefined && t.w !== this.w) {
         if (appearing || !dur) { this.w = t.w; this.apply(); } else ps.push(tween(this, { w: t.w }, { dur, delay, ease: EASE.out }));
       }
@@ -1008,6 +1143,7 @@ body.idle #controls, body.idle #timeline { opacity: 0.12; }
     apply() { super.apply(); if (this.t) this.t.style.opacity = Math.max(0, this.tf).toFixed(3); }
     bind(src, d) { this.src = src; this.d = d; bindNum(this.t, src, d); }
     morphExtra(t, { dur, delay, appearing, ps }) {
+      if (t.tc !== undefined && t.tc !== this.tc) { this.tc = t.tc; this.t.setAttribute("class", `num ${t.tc}`.trim()); }
       const src = t.src ?? this.src, d = t.d ?? this.d;
       if (src && (src !== this.src || d !== this.d)) {
         if (appearing || !dur) { this.bind(src, d); this.tf = 1; this.apply(); }
@@ -1033,8 +1169,54 @@ body.idle #controls, body.idle #timeline { opacity: 0.12; }
       bindNum(this.n, src, d);
     }
     morphExtra(t) {
-      const d = t.d ?? this.d;
-      if (d !== this.d) { this.d = d; bindNum(this.n, this.src, d); }
+      const d = t.d ?? this.d, src = t.src ?? this.src;
+      if (d !== this.d || src !== this.src) { this.d = d; this.src = src; bindNum(this.n, this.src, d); }
+    }
+  }
+
+  // A block of the architecture diagram: rounded rectangle and label. Size, glow and label opacity
+  // morph; the label keeps its font size when the block changes shape.
+  class BoxObj extends Node2D {
+    layoutDefaults() { return { glow: 0, lo: 1, ly: 0, ts: 1, s: 1 }; }
+    constructor(id, layer, { w = 300, h = 60, label = "", size = 22, cls = "blk", rx = 12, lcls = "box-label" } = {}) {
+      super(id, layer, `box ${cls}`);
+      Object.assign(this, { w, h, glow: 0, lo: 1, ly: 0, ts: 1, size, cls });
+      this.halo = svg("rect", { class: "box-halo", rx: rx + 7 }, this.el);
+      this.rect = svg("rect", { class: "box-r", rx }, this.el);
+      this.t = svg("text", { class: lcls, "text-anchor": "middle", "font-size": size }, this.el);
+      if (label) renderRich(this.t, label, size);
+      this.apply();
+    }
+    apply() {
+      super.apply();
+      if (!this.rect) return;
+      const w = Math.max(0, this.w), h = Math.max(0, this.h);
+      for (const [r, pad] of [[this.rect, 0], [this.halo, 7]]) {
+        r.setAttribute("x", r2(-w / 2 - pad)); r.setAttribute("y", r2(-h / 2 - pad));
+        r.setAttribute("width", r2(w + 2 * pad)); r.setAttribute("height", r2(h + 2 * pad));
+      }
+      this.halo.style.opacity = Math.max(0, this.glow).toFixed(3);
+      this.t.setAttribute("y", r2(this.size * 0.34));
+      this.t.setAttribute("transform", `translate(0 ${r2(this.ly)})` + (this.ts !== 1 ? ` scale(${this.ts.toFixed(4)})` : ""));
+      this.t.style.opacity = Math.max(0, this.lo).toFixed(3);
+      this.t.style.visibility = this.lo < 0.003 ? "hidden" : "visible";
+    }
+    setCls(cls) { this.cls = cls; this.el.setAttribute("class", `box ${cls}`); }
+    morphExtra(t, { dur, delay, appearing, ps }) {
+      if (t.cls && t.cls !== this.cls) this.setCls(t.cls);
+      const goal = {};
+      for (const k of ["w", "h", "glow", "lo", "ly", "ts"]) if (t[k] !== undefined && t[k] !== this[k]) goal[k] = t[k];
+      if (!Object.keys(goal).length) return;
+      if (appearing || !dur) { Object.assign(this, goal); this.apply(); } else ps.push(tween(this, goal, { dur, delay }));
+    }
+  }
+
+  // ⊕ (vector addition) and the sine-wave icon of positional encoding, as in the paper's Figure 1.
+  class GlyphObj extends Node2D {
+    constructor(id, layer, kind) {
+      super(id, layer, `glyph glyph-${kind}`);
+      svg("circle", { r: 13, class: "glyph-c" }, this.el);
+      svg("path", { d: kind === "plus" ? "M -7 0 H 7 M 0 -7 V 7" : "M -9 0 C -6 -9, -3 -9, 0 0 S 6 9, 9 0", class: "glyph-p" }, this.el);
     }
   }
 
@@ -1048,6 +1230,8 @@ body.idle #controls, body.idle #timeline { opacity: 0.12; }
   const WB = { x: 410, y: 700, gap: 124 }; // workbench for the one detailed dot product
   const AV = { x: 300, a: 712, v: 776, rule: 812, r: 852 }; // workbench for one α_j v_j (wire-free corner)
   const rowY = (j) => AT.row0 + j * AT.rowGap;
+  // Scenes 5–7: the attention wire from q_it to key j (a cubic, so Scene 8 can bend it into an arc)
+  const fanGeo = (j) => { const x0 = AT.qEdge, x1 = AT.nodeX - 9, y = rowY(j); return [x0, AT.qy, x0 + 140, AT.qy, x1 - 140, y, x1, y]; };
   const ANIMAL = TOKENS.indexOf(E.GUIDED.featuredKey);
   const H1 = MODEL.heads[0];
   const ALPHA = H1.A[FOCUS];
@@ -1060,6 +1244,78 @@ body.idle #controls, body.idle #timeline { opacity: 0.12; }
   const barLen = (a) => AT.barScale * a;
   const alphaLabelX = (j, d) => AT.barX + barLen(ALPHA[j]) + 14 + numW(28, d, false) / 2;
   const wvEmphasis = (j) => 0.45 + 0.55 * (ALPHA[j] / ALPHA_MAX);
+  // Scene 8: both heads attend over one shared row of tokens; head 1 above it, head 2 below it.
+  const H2 = MODEL.heads[1];
+  const ALPHA2 = H2.A[FOCUS];
+  const ALPHA2_MAX = Math.max(...ALPHA2);
+  const H8 = { row: 600, gap: 150, cx: 700, up: -34, dn: 36, zx: 1600, z1y: 372, z2y: 830, catY: 560, woY: 716, mhY: 872, laneX: 72 };
+  const x8 = (j) => H8.cx + (j - (N - 1) / 2) * H8.gap;
+  // the attention arc from "it" to token j (dir −1: head 1, above; dir +1: head 2, below)
+  function arcGeo(j, dir) {
+    const x0 = x8(FOCUS), x1 = x8(j), y = H8.row + (dir < 0 ? H8.up : H8.dn);
+    if (j === FOCUS) return [x0, y, x0 - 52, y + dir * 104, x0 + 52, y + dir * 104, x0, y];
+    const h = 46 + 0.42 * Math.abs(x1 - x0);
+    return [x0, y, x0, y + dir * h, x1, y + dir * h, x1, y];
+  }
+  const arcApex = (j, dir) => { const g = arcGeo(j, dir); return { x: (g[0] + g[6]) / 2, y: 0.125 * (g[1] + g[7]) + 0.375 * (g[3] + g[5]) }; };
+  // Scenes 9–10: one encoder layer. "big" leaves room for the vectors of "it"; "tower" is the compact
+  // left tower of the full Transformer. Blocks are boxes; wires are morphable cubic chains.
+  function encGeo(mode) {
+    const big = mode === "big";
+    const x = big ? 760 : 470, w = big ? 440 : 300;
+    const B = big ? { mhsa: [795, 150], an1: [646, 44], ffn: [470, 92], an2: [330, 44] }
+      : { mhsa: [742, 56], an1: [680, 26], ffn: [618, 46], an2: [556, 26] };
+    const top = (k) => B[k][0] - B[k][1] / 2, bot = (k) => B[k][0] + B[k][1] / 2;
+    const inY = big ? 914 : 817, outY = big ? 282 : 512, resX = x + w / 2 + (big ? 52 : 30);
+    const br1 = big ? (inY + bot("mhsa")) / 2 : 809, br2 = big ? 545 : (top("an1") + bot("ffn")) / 2;
+    const line = (y0, y1) => polyGeo([[x, y0], [x, y1]]);
+    const res = (yb, k) => polyGeo([[x, yb], [resX, yb], [resX, B[k][0]], [x + w / 2, B[k][0]]], big ? 18 : 12);
+    const left = x - w / 2 - (big ? 34 : 22), right = resX + (big ? 30 : 20), lo = bot("mhsa") + (big ? 18 : 12), hi = top("an2") - (big ? 18 : 12);
+    return {
+      x, w, B, resX, inY, outY, br1, br2,
+      blocks: Object.fromEntries(Object.entries(B).map(([k, [y, h]]) => [k, { x, y, w, h }])),
+      wires: { w0: line(inY, bot("mhsa")), w1: line(top("mhsa"), bot("an1")), w2: line(top("an1"), bot("ffn")), w3: line(top("ffn"), bot("an2")), w4: line(top("an2"), outY), r1: res(br1, "an1"), r2: res(br2, "an2") },
+      frame: { x: (left + right) / 2, y: (lo + hi) / 2, w: right - left, h: lo - hi },
+    };
+  }
+  const FC = { inX: 1236, hX: 1516, outX: 1772, cy: 476, inGap: 58, hGap: 37 }; // the FFN, opened up (Scene 9)
+  // Scene 10: the decoder tower (paper Fig. 1, right half)
+  function decGeo() {
+    const x = 1190, w = 310, resX = x + w / 2 + 30;
+    const B = { mm: [742, 50], an1: [684, 26], cross: [610, 50], an2: [548, 26], ffn: [490, 44], an3: [432, 26], lin: [348, 30], sm: [296, 30] };
+    const top = (k) => B[k][0] - B[k][1] / 2, bot = (k) => B[k][0] + B[k][1] / 2;
+    const line = (y0, y1) => polyGeo([[x, y0], [x, y1]]);
+    const res = (yb, k) => polyGeo([[x, yb], [resX, yb], [resX, B[k][0]], [x + w / 2, B[k][0]]], 12);
+    const br1 = 809, br2 = (top("an1") + bot("cross")) / 2, br3 = (top("an2") + bot("ffn")) / 2;
+    const left = x - w / 2 - 22, right = resX + 20, lo = bot("mm") + 12, hi = top("an3") - 12;
+    return {
+      x, w, B, resX, br1, br2, br3,
+      blocks: Object.fromEntries(Object.entries(B).map(([k, [y, h]]) => [k, { x, y, w, h }])),
+      wires: {
+        w0: line(817, bot("mm")), w1: line(top("mm"), bot("an1")), w2: line(top("an1"), bot("cross")), w3: line(top("cross"), bot("an2")),
+        w4: line(top("an2"), bot("ffn")), w5: line(top("ffn"), bot("an3")), w6: line(top("an3"), bot("lin")), w7: line(top("lin"), bot("sm")),
+        w8: polyGeo([[x + w / 2, B.sm[0]], [1446, B.sm[0]]]),
+        r1: res(br1, "an1"), r2: res(br2, "an2"), r3: res(br3, "an3"),
+      },
+      frame: { x: (left + right) / 2, y: (lo + hi) / 2, w: right - left, h: lo - hi },
+    };
+  }
+  const TB = { tokY: 966, embY: 888, embH: 36, peY: 830 }; // embedding, ⊕ positional encoding, token row
+  const DTOK = ["dtok:0", "dtok:1", "dtok:2", "dtok:3", "dtok:4"]; // <START> L' animal est fatigué
+  const probLen = (p) => 300 * p;
+  const PB = { wx: 1566, x: 1580, y0: 246, dy: 44, title: 204, out: 148, note: 518 };
+  // the masked-attention grid, right-aligned in the callout; cells are sized from the widest number shown
+  function mgGeo(d) {
+    const ns = d >= 3 ? 19 / 22 : 1, cw = numW(22, d) * ns + 12, dx = cw + 6, right = 1878;
+    const x0 = right - cw / 2 - 3 * dx, rlx = x0 - cw / 2 - 12, left = rlx - 100;
+    return { ns, cw, dx, x0, rlx, y0: 640, dy: 50, ch: 42, cly: 597, box: { x: (left + right + 14) / 2, y: 692, w: right + 14 - left, h: 262 } };
+  }
+  // Explore: the attention table again, recomputed live (its own objects, so the guided scenes are never rebound)
+  const EX = { q: FOCUS, h: 0, pos: true, scale: "paper", custom: Math.SQRT2, ver: 0 };
+  const EXZ = AT.zY + 20;
+  const exBarLen = (a) => 400 * a; // α can approach 1 here, so the bars use half the guided scale
+  const exStreamGeo = (j) => { const x0 = AT.qEdge, x1 = AT.nodeX - 9, y = rowY(j); return [x1, y, x1 - 140, y, x0 + 140, EXZ, x0, EXZ]; };
+  const fcIn = (i) => FC.cy + (i - 1.5) * FC.inGap, fcH = (k) => FC.cy + (k - 3.5) * FC.hGap;
   // Before softmax (Scene 5) the temporary wires brighten with the raw score.
   const rawT = (sc) => (sc - RAW_LO) / (RAW_HI - RAW_LO);
   const scoreWidth = (sc) => 0.6 + 2.6 * rawT(sc);
@@ -1099,9 +1355,20 @@ body.idle #controls, body.idle #timeline { opacity: 0.12; }
     normalize: "Normalize.",
     mix: "Use those weights to mix Values.",
     gathered: "‘it’ now contains information gathered from other positions.",
+    heads: "Different projections let different heads look at the same sequence differently.",
+    block: "All of it is one block: multi-head self-attention.",
+    zoom: "Now zoom out to the full translation Transformer",
+    example: "Separate translation example",
+    mask: "The decoder cannot attend to future output positions.",
+    cross: "Q from the decoder · K and V from the encoder",
+    loop: "predict → append → feed back → predict again",
+    final: "Everything we just calculated lives here.",
+    explore: "Click any word to make it the query.",
+    nopos: "Without positional information, the mechanism no longer receives explicit token-order information.",
   };
   function build() {
     const svgRoot = document.getElementById("stage");
+    LAYER.under = svgRoot.querySelector("#l-under");
     LAYER.back = svgRoot.querySelector("#l-back");
     LAYER.main = svgRoot.querySelector("#l-main");
     LAYER.fx = svgRoot.querySelector("#l-fx");
@@ -1174,7 +1441,7 @@ body.idle #controls, body.idle #timeline { opacity: 0.12; }
     new DotObj("knode:it", LAYER.main, { r: 5.5, cls: "f-n", glow: "g-node" });
     for (let j = 0; j < N; j++) {
       const y = rowY(j), x0 = AT.qEdge, x1 = AT.nodeX - 9;
-      new WireObj(`awire:${j}`, LAYER.back, { d: `M ${x0} ${AT.qy} C ${x0 + 140} ${AT.qy}, ${x1 - 140} ${y}, ${x1} ${y}`, cls: "wire attn", glowCls: "wire-glow attn-glow" });
+      new WireObj(`awire:${j}`, LAYER.back, { geo: fanGeo(j), cls: "wire attn", glowCls: "wire-glow attn-glow" });
       new WireObj(`stream:${j}`, LAYER.back, { d: `M ${x1} ${y} C ${x1 - 140} ${y}, ${x0 + 140} ${AT.zY}, ${x0} ${AT.zY}`, cls: "wire s-v", glowCls: "wire-glow s-v" });
       new NumObj(`score:${j}`, LAYER.main, { size: 28 });
       new BarObj(`bar:${j}`, LAYER.main);
@@ -1198,6 +1465,150 @@ body.idle #controls, body.idle #timeline { opacity: 0.12; }
     new VectorObj("z", LAYER.main, { n: 2, size: 28, gap: 90, orient: "row", src: `heads.0.Z.${FOCUS}`, d: 2, cls: "v-v", hlCls: "hl-v" });
     new TextObj("zlab", LAYER.main, { rich: "\\i{z}_{it} =", size: 30, anchor: "end", textCls: "serif f-v" });
     new TextObj("zformula", LAYER.main, { rich: "\\i{z}_{it} = Σ_{j} \\i{α}_{j} \\i{v}_{j}", size: 26, textCls: "serif f-v" });
+    // Scene 8: a second head over the same tokens, then Concat and W_O
+    for (let j = 0; j < N; j++) {
+      new DotObj(`node2:${j}`, LAYER.main, { r: 5.5, cls: "f-n", glow: "g-node" });
+      new WireObj(`awire2:${j}`, LAYER.back, { geo: arcGeo(j, 1), cls: "wire attn", glowCls: "wire-glow attn-glow" });
+      new NumObj(`a2:${j}`, LAYER.main, { size: 28 });
+    }
+    new VectorObj("z2", LAYER.main, { n: 2, size: 28, gap: 90, orient: "row", src: `heads.1.Z.${FOCUS}`, d: 2, cls: "v-v", hlCls: "hl-v" });
+    for (const h of [1, 2]) {
+      new TextObj(`zlab${h}`, LAYER.main, { rich: `\\i{z}_{it}^{(${h})} =`, size: 30, anchor: "end", textCls: "serif f-v" });
+      new TextObj(`hd:lab${h}`, LAYER.main, { text: `HEAD ${h}`, size: 18, anchor: "start", textCls: "lane-tag" });
+      new TextObj(`hd:w${h}`, LAYER.main, { parts: [[`\\i{W}_{${h}}^{Q}`, "f-q"], ["\u2003", null], [`\\i{W}_{${h}}^{K}`, "f-k"], ["\u2003", null], [`\\i{W}_{${h}}^{V}`, "f-v"]], size: 28, anchor: "start", textCls: "serif" });
+    }
+    new TextObj("eq8a", LAYER.hud, { rich: "head_{i} = Attention(\\i{QW}_{i}^{Q}, \\i{KW}_{i}^{K}, \\i{VW}_{i}^{V})", size: 34, textCls: "serif" });
+    new TextObj("eq8b", LAYER.hud, { rich: "MultiHead(\\i{Q}, \\i{K}, \\i{V}) = Concat(head_{1}, …, head_{h}) \\i{W}^{O}", size: 34, textCls: "serif" });
+    new VectorObj("concat", LAYER.main, { n: 4, size: 26, gap: 80, orient: "row", src: `Concat.${FOCUS}`, d: 2, cls: "v-v", hlCls: "hl-v" });
+    new TextObj("concatlab", LAYER.main, { text: "Concat", size: 26, textCls: "serif f-v" });
+    new MatrixObj("W:o", LAYER.main, { rows: 4, cols: 4, root: "params.WO", d: 1, size: 22, gx: 104, gy: 40, cls: "m-neutral" });
+    new TextObj("Wlab:o", LAYER.main, { rich: "\\i{W}^{O}", size: 32, textCls: "serif" });
+    new VectorObj("mh", LAYER.main, { n: 4, size: 26, gap: 104, orient: "row", src: `MH.${FOCUS}`, d: 2, cls: "v-neutral" });
+    new TextObj("mhlab", LAYER.main, { rich: "MultiHead_{it} =", size: 28, anchor: "end", textCls: "serif" });
+    new TextObj("ann8:demo", LAYER.main, { text: "Teaching demo: 2 heads", size: 26, textCls: "serif" });
+    new TextObj("ann8:paper", LAYER.main, { text: "Paper: 8 heads", size: 22, textCls: "serif muted" });
+    // Scenes 9–10: the encoder layer (ghost layers first so they sit underneath)
+    for (let k = 5; k >= 1; k--) new BoxObj(`enc:g${k}`, LAYER.under, { cls: "ghost", rx: 18 });
+    new BoxObj("enc:frame", LAYER.under, { cls: "frame", rx: 18 });
+    new BoxObj("enc:mhsa", LAYER.under, { label: "Multi-Head Self-Attention", size: 24, cls: "blk blk-attn" });
+    new BoxObj("enc:an1", LAYER.under, { label: "Add & Norm", size: 22, cls: "blk blk-norm" });
+    new BoxObj("enc:ffn", LAYER.under, { label: "Feed Forward", size: 24, cls: "blk" });
+    new BoxObj("enc:an2", LAYER.under, { label: "Add & Norm", size: 22, cls: "blk blk-norm" });
+    for (const k of ["w0", "w1", "w2", "w3", "w4"]) new PathObj(`enc:${k}`, LAYER.back, { geo: polyGeo([[0, 0], [0, 1]]), cls: "wire s-n", arrow: "arr" });
+    for (const k of ["r1", "r2"]) new PathObj(`enc:${k}`, LAYER.back, { geo: polyGeo([[0, 0], [1, 0], [1, 1], [0, 1]]), cls: "wire res", glowCls: "wire-glow res-glow", arrow: "arr" });
+    new VectorObj("x9", LAYER.main, { n: 4, size: 24, gap: 80, orient: "row", src: `X.${FOCUS}`, d: 2, cls: "v-x" });
+    new TextObj("x9lab", LAYER.main, { rich: "\\i{x}_{it}", size: 30, anchor: "end", textCls: "serif" });
+    new VectorObj("res9", LAYER.main, { n: 4, size: 24, gap: 80, orient: "row", src: `X.${FOCUS}`, d: 2, cls: "v-x" });
+    new VectorObj("r1v", LAYER.main, { n: 4, size: 24, gap: 80, orient: "row", src: `R1.${FOCUS}`, d: 2, cls: "v-neutral" });
+    new VectorObj("ln1", LAYER.main, { n: 4, size: 24, gap: 80, orient: "row", src: `LN1.${FOCUS}.out`, d: 2, cls: "v-neutral" });
+    new VectorObj("ln2", LAYER.main, { n: 4, size: 24, gap: 80, orient: "row", src: `LN2.${FOCUS}.out`, d: 2, cls: "v-neutral" });
+    new TextObj("wb9:lx", LAYER.main, { rich: "\\i{x}_{it}", size: 28, anchor: "end", textCls: "serif" });
+    new TextObj("wb9:lmh", LAYER.main, { rich: "MultiHead_{it}", size: 28, anchor: "end", textCls: "serif" });
+    new TextObj("wb9:plus", LAYER.main, { text: "+", size: 30, textCls: "muted" });
+    new TextObj("wb9:eq", LAYER.main, { text: "=", size: 30, textCls: "muted" });
+    new PathObj("wb9:rule", LAYER.main, { geo: polyGeo([[0, 0], [1, 0]]), cls: "rule" });
+    new TextObj("eq9", LAYER.hud, { rich: "LayerNorm(\\i{x} + Sublayer(\\i{x}))", size: 34, textCls: "serif" });
+    // the feed-forward network, opened up: 4 → 8 → ReLU → 4
+    new BoxObj("ffn:box", LAYER.under, { cls: "callout", rx: 16 });
+    for (let k = 0; k < 8; k++) {
+      new PathObj(`ffn:e1:${k}`, LAYER.back, { d: [0, 1, 2, 3].map((i) => `M ${FC.inX} ${r2(fcIn(i))} L ${FC.hX} ${r2(fcH(k))}`).join(" "), cls: "ffn-edge" });
+      new PathObj(`ffn:e2:${k}`, LAYER.back, { d: [0, 1, 2, 3].map((i) => `M ${FC.hX} ${r2(fcH(k))} L ${FC.outX} ${r2(fcIn(i))}`).join(" "), cls: "ffn-edge" });
+      new DotObj(`ffn:h${k}`, LAYER.main, { r: 6, cls: "f-n", glow: "g-node" });
+      new NumObj(`ffn:hv${k}`, LAYER.main, { size: 22 });
+    }
+    for (let i = 0; i < 4; i++) {
+      for (const io of ["i", "o"]) { new DotObj(`ffn:${io}${i}`, LAYER.main, { r: 6, cls: "f-n", glow: "g-node" }); new NumObj(`ffn:${io}v${i}`, LAYER.main, { size: 22 }); }
+    }
+    new TextObj("ffn:relu", LAYER.main, { text: "ReLU", size: 20, textCls: "lane-tag" });
+    new TextObj("ffn:dims1", LAYER.main, { text: "Demo:  4 → 8 → ReLU → 4", size: 26, textCls: "serif" });
+    new TextObj("ffn:dims2", LAYER.main, { text: "Paper:  512 → 2048 → 512", size: 22, textCls: "serif muted" });
+    new TextObj("stack:paper", LAYER.main, { rich: "Paper: \\i{N} = 6", size: 30, textCls: "serif" });
+    new TextObj("stack:demo", LAYER.main, { text: "Demo computes: 1 layer", size: 22, textCls: "serif muted" });
+    // Scene 10: the rest of the encoder tower, the decoder tower, masking grid, output, loop
+    new BoxObj("enc:emb", LAYER.under, { label: "Input Embedding", size: 17, cls: "blk blk-io" });
+    for (let k = 5; k >= 1; k--) new BoxObj(`dec:g${k}`, LAYER.under, { cls: "ghost", rx: 16 });
+    new BoxObj("dec:frame", LAYER.under, { cls: "frame", rx: 16 });
+    for (const [k, label, size, cls] of [["mm", "Masked Multi-Head Attention", 18, "blk blk-attn blk-mask"], ["an1", "Add & Norm", 16, "blk blk-norm"],
+      ["cross", "Encoder–Decoder Attention", 18, "blk blk-attn"], ["an2", "Add & Norm", 16, "blk blk-norm"], ["ffn", "Feed Forward", 18, "blk"],
+      ["an3", "Add & Norm", 16, "blk blk-norm"], ["lin", "Linear", 17, "blk blk-io"], ["sm", "Softmax", 17, "blk blk-io"], ["emb", "Output Embedding", 17, "blk blk-io"]])
+      new BoxObj(`dec:${k}`, LAYER.under, { label, size, cls });
+    for (const pre of ["enc", "dec"]) {
+      new GlyphObj(`${pre}:pe`, LAYER.main, "plus");
+      new GlyphObj(`${pre}:peicon`, LAYER.main, "wave");
+      new TextObj(`${pre}:pelab`, LAYER.main, { text: "Positional Encoding", size: 17, anchor: pre === "enc" ? "end" : "start", textCls: "pe-text" });
+      for (const k of ["win", "wemb"]) new PathObj(`${pre}:${k}`, LAYER.back, { geo: polyGeo([[0, 0], [0, 1]]), cls: "wire s-n", arrow: "arr" });
+      new PathObj(`${pre}:wpe`, LAYER.back, { geo: polyGeo([[0, 0], [1, 0]]), cls: "wire s-pe" });
+      new TextObj(`${pre}:n6`, LAYER.main, { rich: "\\i{N} = 6", size: 26, textCls: "serif" });
+      new TextObj(`${pre}:title`, LAYER.main, { text: pre === "enc" ? "ENCODER" : "DECODER", size: 17, textCls: "lane-tag" });
+      // Q, K, V entering this tower's self-attention from one stream
+      for (const [c, cls] of [["sq", "s-q"], ["sk", "s-k"], ["sv", "s-v"]]) new PathObj(`${pre}:${c}`, LAYER.back, { geo: polyGeo([[0, 0], [0, 1], [1, 1]]), cls: `wire ${cls}`, arrow: `arr-${cls.slice(2)}` });
+    }
+    for (const k of ["w0", "w1", "w2", "w3", "w4", "w5", "w6", "w7", "w8"]) new PathObj(`dec:${k}`, LAYER.back, { geo: polyGeo([[0, 0], [0, 1]]), cls: "wire s-n", arrow: "arr" });
+    for (const k of ["r1", "r2", "r3"]) new PathObj(`dec:${k}`, LAYER.back, { geo: polyGeo([[0, 0], [1, 0], [1, 1], [0, 1]]), cls: "wire res", glowCls: "wire-glow res-glow", arrow: "arr" });
+    // cross-attention: Q rises from the decoder stream; K and V come across from the encoder output
+    new PathObj("x:q", LAYER.back, { geo: polyGeo([[0, 0], [0, 1]]), cls: "wire s-q", glowCls: "wire-glow s-q", arrow: "arr-q" });
+    new PathObj("x:k", LAYER.back, { geo: polyGeo([[0, 0], [0, 1], [1, 1], [1, 2], [2, 2]]), cls: "wire s-k", glowCls: "wire-glow s-k", arrow: "arr-k" });
+    new PathObj("x:v", LAYER.back, { geo: polyGeo([[0, 0], [0, 1], [1, 1], [1, 2], [2, 2]]), cls: "wire s-v", glowCls: "wire-glow s-v", arrow: "arr-v" });
+    for (const [k, txt, cls] of [["x:ql", "Q", "f-q"], ["x:kl", "K", "f-k"], ["x:vl", "V", "f-v"], ["enc:ql", "Q", "f-q"], ["enc:kl", "K", "f-k"], ["enc:vl", "V", "f-v"], ["dec:ql", "Q", "f-q"], ["dec:kl", "K", "f-k"], ["dec:vl", "V", "f-v"]])
+      new TextObj(k, LAYER.main, { rich: `\\i{${txt}}`, size: 20, textCls: `serif ${cls}` });
+    // tokens: the translation example's source word "is", the decoder's inputs, the output line
+    new TokenObj("stok:is", LAYER.main, "is", 48);
+    ["<START>", "L'", "animal", "est", "fatigué"].forEach((w, i) => new TokenObj(DTOK[i], LAYER.main, w, 48));
+    ["L'", "animal", "est"].forEach((w, i) => new TokenObj(`outl:${i}`, LAYER.main, w, 48));
+    new TextObj("outl:more", LAYER.main, { text: "…", size: 30, textCls: "muted" });
+    // masked self-attention, opened up: rows are query positions, columns key positions
+    new BoxObj("mg:box", LAYER.under, { cls: "callout", rx: 16 });
+    E.PARAMS.decoder.inputs.forEach((w, i) => {
+      new TextObj(`mg:rl${i}`, LAYER.main, { text: w, size: 20, anchor: "end", textCls: "token-text" });
+      new TextObj(`mg:cl${i}`, LAYER.main, { text: w, size: 20, textCls: "token-text" });
+    });
+    for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) {
+      new BoxObj(`mg:c${r}${c}`, LAYER.under, { cls: "cell", rx: 6 });
+      new NumObj(`mg:v${r}${c}`, LAYER.main, { size: 22 });
+    }
+    // output: Linear → Softmax → next-token probabilities (declared illustrative logits, real softmax)
+    DEC.next.vocab.forEach((w, k) => {
+      new TokenObj(`pb:w${k}`, LAYER.main, w, 48);
+      new BarObj(`pb:bar${k}`, LAYER.main);
+      new NumObj(`pb:v${k}`, LAYER.main, { size: 24 });
+    });
+    REG.get("pb:bar0").el.classList.add("pbar-top");
+    new TextObj("pb:title", LAYER.main, { text: "NEXT-TOKEN PROBABILITIES", size: 15, textCls: "lane-tag" });
+    // two lines so the label stays large enough to read on a projector
+    const note = new TextObj("pb:note", LAYER.main, { size: 20, textCls: "note-text" });
+    svg("tspan", { x: 0 }, note.t).textContent = "illustrative — ";
+    svg("tspan", { x: 0, dy: "1.3em" }, note.t).textContent = "not from a trained translation model";
+    new TextObj("pair", LAYER.hud, { text: "The animal is tired.   →   L’animal est fatigué.", size: 26, textCls: "serif muted" });
+    new BoxObj("fin:box", LAYER.under, { cls: "callout", rx: 18 });
+    for (const k of ["fin:l", "fin:r"]) new PathObj(k, LAYER.back, { geo: polyGeo([[0, 0], [0, 1]]), cls: "lead" });
+    new PathObj("loop:path", LAYER.back, { geo: polyGeo([[0, 0], [1, 0], [1, 1], [0, 1]]), cls: "wire s-n", glowCls: "wire-glow attn-glow", arrow: "arr" });
+    // Explore: its own copy of the attention table (exploring never rebinds the guided scenes' numbers)
+    new TextObj("ex:qword", LAYER.main, { text: TOKENS[FOCUS], size: 43, textCls: "token-text" });
+    new DotObj("ex:qnode", LAYER.main, { r: 5.5, cls: "f-n", glow: "g-node" });
+    new VectorObj("ex:q", LAYER.main, { n: 2, size: 28, gap: 90, orient: "row", src: `heads.0.Q.${FOCUS}`, d: 2, cls: "v-q", hlCls: "hl-q" });
+    new TextObj("ex:qlab", LAYER.main, { rich: "\\i{q}_{it} =", size: 30, anchor: "end", textCls: "serif f-q" });
+    new VectorObj("ex:z", LAYER.main, { n: 2, size: 28, gap: 90, orient: "row", src: `heads.0.Z.${FOCUS}`, d: 2, cls: "v-v", hlCls: "hl-v" });
+    new TextObj("ex:zlab", LAYER.main, { rich: "\\i{z}_{it} =", size: 30, anchor: "end", textCls: "serif f-v" });
+    for (let j = 0; j < N; j++) {
+      new WireObj(`ex:w:${j}`, LAYER.back, { geo: fanGeo(j), cls: "wire attn", glowCls: "wire-glow attn-glow" });
+      new PathObj(`ex:st:${j}`, LAYER.back, { geo: exStreamGeo(j), cls: "wire s-v" });
+      new TokenObj(`ex:lab:${j}`, LAYER.main, TOKENS[j], 48);
+      new DotObj(`ex:node:${j}`, LAYER.main, { r: 5.5, cls: "f-n", glow: "g-node" });
+      new VectorObj(`ex:k:${j}`, LAYER.main, { n: 2, size: 24, gap: 77, orient: "row", src: `heads.0.K.${j}`, d: 2, cls: "v-k" });
+      new NumObj(`ex:s:${j}`, LAYER.main, { size: 28 });
+      new BarObj(`ex:bar:${j}`, LAYER.main);
+      new NumObj(`ex:a:${j}`, LAYER.main, { size: 26 });
+    }
+    new TextObj("ex:hk", LAYER.main, { rich: "\\i{k}_{j}", size: 26, textCls: "serif f-k" });
+    new TextObj("ex:hs", LAYER.main, { rich: "\\i{q}·\\i{k}_{j} / √\\i{d}_{k}", size: 24, textCls: "serif muted" });
+    new LabelNumObj("ex:hsn", LAYER.main, { rich: "\\i{q}·\\i{k}_{j} ÷ ", size: 24, cls: "serif muted", src: "derived.alphaSum", d: 2 });
+    new TextObj("ex:ha", LAYER.main, { rich: "\\i{α}_{j}", size: 28, textCls: "serif" });
+    new LabelNumObj("ex:sum", LAYER.main, { rich: "Σ \\i{α}_{j} = ", size: 26, src: "derived.alphaSum", d: 2 });
+    const hits = svg("g", {}, LAYER.hud);
+    for (let j = 0; j < N; j++) {
+      const r = svg("rect", { class: "ex-hit", x: AT.nodeX - 34, y: rowY(j) - 37, width: AT.keyX + 130 - (AT.nodeX - 34), height: 74, rx: 12 }, hits);
+      r.addEventListener("click", () => exploreSelect(j));
+    }
     // Scene 1 arcs (built after the sentence is measured)
   }
 
@@ -1207,6 +1618,7 @@ body.idle #controls, body.idle #timeline { opacity: 0.12; }
     for (const o of REG.values()) if (o instanceof VectorObj) { o.cellW = o.cellWFor(o.d); o.relayout(); }
     REG.get("title").measure();
     REG.get("keylab:it").measure();
+    for (const o of REG.values()) if (o instanceof TokenObj && o.w === undefined) o.measure();
     for (const k of ["attn", "sm", "qkt", "div", "close", "v"]) EQW[k] = REG.get(`eq:${k}`).width();
     const widths = TOKENS.map((_, j) => REG.get(`tok:${j}`).measure());
     const gaps = TOKENS.map((w, j) => (j === 0 ? 0 : TOKENS[j] === "." ? 28 : 34));
@@ -1299,9 +1711,9 @@ body.idle #controls, body.idle #timeline { opacity: 0.12; }
     const d = digits();
     const L = peCols(waves(vectorCols(tokenRow(HUD(new Layout()), { dim: true }), { dim: true }), { o: 0.12, dots: 0.1, labels: 0.25 }), { dim: true });
     const yy = 812;
-    L.put("det:e", { x: DETX.e, y: yy, o: 1, src: `E.${FOCUS}`, d }).put("det:plus", { x: DETX.plus, y: yy + 14, o: 1 })
-      .put("det:p", { x: DETX.p, y: yy, o: 1, src: `P.${FOCUS}`, d }).put("det:eq", { x: DETX.eq, y: yy + 14, o: 1 })
-      .put("det:x", { x: DETX.x, y: yy, o: 1, src: `X.${FOCUS}`, d })
+    L.put("det:e", { x: DETX.e, y: yy, s: 1, o: 1, src: `E.${FOCUS}`, d }).put("det:plus", { x: DETX.plus, y: yy + 14, o: 1 })
+      .put("det:p", { x: DETX.p, y: yy, s: 1, o: 1, src: `P.${FOCUS}`, d }).put("det:eq", { x: DETX.eq, y: yy + 14, o: 1 })
+      .put("det:x", { x: DETX.x, y: yy, s: 1, o: 1, src: `X.${FOCUS}`, d })
       .put("det:le", { x: DETX.e, y: yy + 150, o: 1 }).put("det:lp", { x: DETX.p, y: yy + 150, o: 1 }).put("det:lx", { x: DETX.x, y: yy + 150, o: 1 });
     return L;
   }
@@ -1369,6 +1781,7 @@ body.idle #controls, body.idle #timeline { opacity: 0.12; }
     for (let j = 0; j < N; j++) {
       const r = rowIds(j);
       L.put(r.lab, { x: AT.labX + (tokW(j) * 0.62) / 2, y: rowY(j) + 11, s: 0.62, o: 1, pill: 0 }).put(r.node, { x: AT.nodeX, y: rowY(j), o: 1 });
+      L.put(`awire:${j}`, { geo: fanGeo(j), o: 0 }); // shown by the scores; geometry kept explicit for Scene 8
     }
     return L;
   }
@@ -1481,12 +1894,332 @@ body.idle #controls, body.idle #timeline { opacity: 0.12; }
     return cap(L, "gathered");
   }
 
+  // ---- Scene 8: the calculation we followed becomes head 1; head 2 runs in parallel over the same row
+  function L8_heads() {
+    const L = HUD(new Layout()), d = digits();
+    for (let j = 0; j < N; j++) {
+      const ap = arcApex(j, -1);
+      L.put(`tok:${j}`, { x: x8(j), y: H8.row + 11, s: 0.62, o: 1, pill: 0 }).put(`node:${j}`, { x: x8(j), y: H8.row + H8.up, o: 1 })
+        .put(`awire:${j}`, { geo: arcGeo(j, -1), o: alphaOpacity(ALPHA[j]), draw: 1, sw: alphaWidth(ALPHA[j]), alphaSrc: `heads.0.A.${FOCUS}.${j}` })
+        .put(`score:${j}`, { x: ap.x, y: ap.y - 17, s: 0.8, o: 1, src: `heads.0.A.${FOCUS}.${j}`, d });
+    }
+    const hw = vecHalfW("z", 90, d);
+    return L.put("z", { x: H8.zx, y: H8.z1y, s: 1, o: 1, orient: "row", gap: 90, src: `heads.0.Z.${FOCUS}`, d })
+      .put("zlab1", { x: H8.zx - hw - 14, y: H8.z1y + 10, o: 1 })
+      .put("hd:lab1", { x: H8.laneX, y: 296, o: 1 }).put("hd:w1", { x: H8.laneX, y: 340, o: 1 })
+      .put("eq8a", { x: 960, y: 205, o: 1 });
+  }
+  function L8_head2() {
+    const L = L8_heads(), d = digits();
+    for (let j = 0; j < N; j++) {
+      const ap = arcApex(j, 1);
+      L.put(`node2:${j}`, { x: x8(j), y: H8.row + H8.dn, o: 1 })
+        .put(`awire2:${j}`, { geo: arcGeo(j, 1), o: alphaOpacity(ALPHA2[j]), draw: 1, sw: alphaWidth(ALPHA2[j]), alphaSrc: `heads.1.A.${FOCUS}.${j}` })
+        .put(`a2:${j}`, { x: ap.x, y: ap.y + 17, s: 0.8, o: 1, src: `heads.1.A.${FOCUS}.${j}`, d });
+    }
+    const hw = vecHalfW("z2", 90, d);
+    L.put("z2", { x: H8.zx, y: H8.z2y, s: 1, o: 1, orient: "row", gap: 90, src: `heads.1.Z.${FOCUS}`, d })
+      .put("zlab2", { x: H8.zx - hw - 14, y: H8.z2y + 10, o: 1 })
+      .put("hd:lab2", { x: H8.laneX, y: 884, o: 1 }).put("hd:w2", { x: H8.laneX, y: 928, o: 1 });
+    return cap(L, "heads");
+  }
+  function L8_concat() {
+    const L = L8_head2().hide("cap:heads").hide("zlab1").hide("zlab2"), d = digits();
+    const st = REG.get("concat").step(80, d); // the two head outputs line up with the halves of Concat
+    return L.put("concat", { x: H8.zx, y: H8.catY, s: 1, o: 1, orient: "row", gap: 80, src: `Concat.${FOCUS}`, d })
+      .put("concatlab", { x: H8.zx, y: H8.catY - 50, o: 1 })
+      .put("z", { x: H8.zx - st, y: H8.catY, s: 26 / 28, o: 0 }).put("z2", { x: H8.zx + st, y: H8.catY, s: 26 / 28, o: 0 })
+      .put("eq8b", { x: 960, y: 150, o: 1 })
+      .put("ann8:demo", { x: 1700, y: 150, o: 1 }).put("ann8:paper", { x: 1700, y: 188, o: 1 });
+  }
+  function L8_wo() {
+    const L = L8_concat(), d = digits(), W = REG.get("W:o");
+    const cx = H8.zx - W.bw - 24 - REG.get("concat").shape("col", 40, d).bw, top = H8.woY - W.bh - 28;
+    return L.put("concat", { x: cx, y: H8.woY, orient: "col", gap: 40 }).put("concatlab", { x: cx, y: top })
+      .put("W:o", { x: H8.zx, y: H8.woY, o: 1 }).put("Wlab:o", { x: H8.zx, y: top + 2, o: 1 })
+      .put("mh", { x: H8.zx, y: H8.mhY, s: 1, o: 1, orient: "row", gap: 104, src: `MH.${FOCUS}`, d })
+      .put("mhlab", { x: H8.zx - vecHalfW("mh", 104, d) - 14, y: H8.mhY + 10, o: 1 });
+  }
+
+  // ---- Scene 9: the machinery we watched becomes one block of an encoder layer
+  function encPut(L, G, parts) {
+    for (const k of parts) {
+      const b = G.blocks[k];
+      if (b) L.put(`enc:${k}`, { x: b.x, y: b.y, w: b.w, h: b.h, s: 1, o: 1, lo: 1 });
+      else L.put(`enc:${k}`, { geo: G.wires[k], o: 1, draw: 1 });
+    }
+    return L;
+  }
+  // Scene 8's arcs and nodes scaled into a block: the same objects and α widths, in a smaller world.
+  function miniInto(L, box, { o = 1, top = 44 } = {}) {
+    const src = L8_head2(), k = Math.min((box.w - 44) / 1060, (box.h - top - 14) / 540);
+    const cx = box.x, cy = box.y + top / 2;
+    for (let j = 0; j < N; j++) for (const id of [`node:${j}`, `node2:${j}`, `awire:${j}`, `awire2:${j}`]) {
+      const t = src.get(id);
+      L.put(id, { ...t, x: cx + k * ((t.x ?? 0) - H8.cx), y: cy + k * ((t.y ?? 0) - H8.row), s: k * (t.s ?? 1), o: (t.o ?? 1) * o });
+    }
+    return L;
+  }
+  const WB9 = { x: 1430, rx: 576, rmh: 636, rule: 668, rs: 706, ln1: 590, ln2: 262, mh: 678, x9: 934 };
+  function L9_block() {
+    const L = HUD(new Layout()), G = encGeo("big"), d = digits(), mb = G.blocks.mhsa;
+    encPut(L, G, ["mhsa", "w0"]).put("enc:mhsa", { ly: -mb.h / 2 + 30 });
+    miniInto(L, mb, { top: 50 });
+    const hx = vecHalfW("x9", 80, d), hm = vecHalfW("mh", 80, d, 24 / 26);
+    return cap(L, "block").put("x9", { x: G.x, y: WB9.x9, s: 1, o: 1, orient: "row", gap: 80, src: `X.${FOCUS}`, d }).put("x9lab", { x: G.x - hx - 14, y: WB9.x9 + 10, o: 1 })
+      .put("mh", { x: G.x, y: WB9.mh, s: 24 / 26, o: 1, orient: "row", gap: 80, src: `MH.${FOCUS}`, d }).put("mhlab", { x: G.x - hm - 14, y: WB9.mh + 9, o: 1 });
+  }
+  // "=" only when the displayed x_it and MultiHead_it digits add up exactly to the displayed sum
+  const residualSign = (d) => [0, 1, 2, 3].every((i) => E.relationSign([MODEL.X[FOCUS][i], MODEL.MH[FOCUS][i]], MODEL.R1[FOCUS][i], d) === "=") ? "=" : "≈";
+  function L9_residual() {
+    const L = L9_block().hide("mhlab").hide("cap:block"), G = encGeo("big"), d = digits();
+    encPut(L, G, ["an1", "w1", "r1"]);
+    const hw = vecHalfW("res9", 80, d), lx = WB9.x - hw - 46;
+    return L.put("res9", { x: WB9.x, y: WB9.rx, s: 1, o: 1, orient: "row", gap: 80, src: `X.${FOCUS}`, d })
+      .put("mh", { x: WB9.x, y: WB9.rmh })
+      .put("wb9:lx", { x: lx, y: WB9.rx + 10, o: 1 }).put("wb9:lmh", { x: lx, y: WB9.rmh + 10, o: 1 })
+      .put("wb9:plus", { x: WB9.x - hw - 22, y: WB9.rmh + 10, o: 1 })
+      .put("wb9:rule", { geo: polyGeo([[WB9.x - hw, WB9.rule], [WB9.x + hw, WB9.rule]]), o: 1, draw: 1 })
+      .put("wb9:eq", { x: WB9.x - hw - 22, y: WB9.rs + 10, o: 1, text: residualSign(d) })
+      .put("r1v", { x: WB9.x, y: WB9.rs, s: 1, o: 1, orient: "row", gap: 80, src: `R1.${FOCUS}`, d })
+      .put("ln1", { x: G.x, y: WB9.ln1, s: 1, o: 1, orient: "row", gap: 80, src: `LN1.${FOCUS}.out`, d, pl: 1 })
+      .put("eq9", { x: 960, y: 205, o: 1 });
+  }
+  function L9_ffn() {
+    const L = L9_residual(), G = encGeo("big"), d = digits();
+    for (const id of ["res9", "mh", "r1v", "wb9:lx", "wb9:lmh", "wb9:plus", "wb9:rule", "wb9:eq"]) L.hide(id);
+    encPut(L, G, ["ffn", "an2", "w2", "w3", "r2", "w4"]).put("enc:ffn", { glow: 0.55 });
+    L.put("ffn:box", { x: 1500, y: FC.cy, w: 760, h: 368, o: 1, lo: 0 });
+    for (let i = 0; i < 4; i++) {
+      L.put(`ffn:i${i}`, { x: FC.inX, y: fcIn(i), o: 1 }).put(`ffn:iv${i}`, { x: FC.inX - 54, y: fcIn(i), s: 1, o: 1, src: `LN1.${FOCUS}.out.${i}`, d })
+        .put(`ffn:o${i}`, { x: FC.outX, y: fcIn(i), o: 1 }).put(`ffn:ov${i}`, { x: FC.outX + 54, y: fcIn(i), s: 1, o: 1, src: `F.${FOCUS}.${i}`, d });
+    }
+    for (let k = 0; k < 8; k++) {
+      const dead = MODEL.Hpre[FOCUS][k] <= 0; // ReLU sets these hidden units to exactly 0
+      L.put(`ffn:h${k}`, { x: FC.hX, y: fcH(k), o: dead ? 0.3 : 1 }).put(`ffn:hv${k}`, { x: FC.hX + 54, y: fcH(k), s: 1, o: dead ? 0.5 : 1, src: `Hid.${FOCUS}.${k}`, d })
+        .put(`ffn:e1:${k}`, { o: 1, draw: 1 }).put(`ffn:e2:${k}`, { o: dead ? 0.12 : 1, draw: 1 });
+    }
+    return L.put("ffn:relu", { x: FC.hX, y: fcH(0) - 26, o: 1 })
+      .put("ffn:dims1", { x: 1500, y: 712, o: 1 }).put("ffn:dims2", { x: 1500, y: 748, o: 1 })
+      .put("ln2", { x: G.x, y: WB9.ln2, s: 1, o: 1, orient: "row", gap: 80, src: `LN2.${FOCUS}.out`, d, pl: 1 });
+  }
+  function L9_stack() {
+    const L = L9_ffn(), G = encGeo("big"), f = G.frame;
+    for (const id of [...L.keys()]) if (id.startsWith("ffn:") || ["x9", "x9lab", "ln1", "ln2", "eq9"].includes(id)) L.hide(id);
+    L.put("enc:ffn", { glow: 0 }).put("enc:frame", { x: f.x, y: f.y, w: f.w, h: f.h, s: 1, o: 1 });
+    for (let k = 1; k <= 5; k++) L.put(`enc:g${k}`, { x: f.x + 12 * k, y: f.y - 26 * k, w: f.w, h: f.h, s: 1, o: 1 - 0.14 * k });
+    return L.put("stack:paper", { x: f.x - f.w / 2 - 170, y: f.y - 6, o: 1 }).put("stack:demo", { x: f.x - f.w / 2 - 170, y: f.y + 34, o: 1 });
+  }
+
+  // ---- Scene 10: the full Transformer (paper Fig. 1) — the encoder tower on the left, the decoder on the right
+  const ENC_TS = { mhsa: 19 / 24, an1: 16 / 22, ffn: 18 / 24, an2: 16 / 22 };
+  const MINI = [...Array(N).keys()].flatMap((j) => [`node:${j}`, `node2:${j}`, `awire:${j}`, `awire2:${j}`]);
+  function tokenRowAt(L, ids, cx, y, s = 0.5, gap = 14) {
+    const ws = ids.map((id) => REG.get(id).w * s);
+    let x = cx - (ws.reduce((a, b) => a + b, 0) + gap * (ids.length - 1)) / 2;
+    ids.forEach((id, i) => { L.put(id, { x: x + ws[i] / 2, y, s, o: 1, pill: 0 }); x += ws[i] + gap; });
+    return L;
+  }
+  // embedding, ⊕ positional encoding and the token row under a tower (side −1: icon on the left)
+  function towerBase(L, pre, x, w, side) {
+    return L.put(`${pre}:emb`, { x, y: TB.embY, w, h: TB.embH, s: 1, o: 1, lo: 1 })
+      .put(`${pre}:pe`, { x, y: TB.peY, s: 1, o: 1 }).put(`${pre}:peicon`, { x: x + side * 54, y: TB.peY, s: 1, o: 1 })
+      .put(`${pre}:pelab`, { x: x + side * 78, y: TB.peY + 6, o: 1 })
+      .put(`${pre}:win`, { geo: polyGeo([[x, TB.tokY - 28], [x, TB.embY + TB.embH / 2]]), o: 1, draw: 1 })
+      .put(`${pre}:wemb`, { geo: polyGeo([[x, TB.embY - TB.embH / 2], [x, TB.peY + 13]]), o: 1, draw: 1 })
+      .put(`${pre}:wpe`, { geo: polyGeo([[x + side * 41, TB.peY], [x + side * 13, TB.peY]]), o: 1, draw: 1 });
+  }
+  function encTower(L) {
+    const G = encGeo("tower"), f = G.frame;
+    encPut(L, G, ["mhsa", "an1", "ffn", "an2", "w0", "w1", "w2", "w3", "w4", "r1", "r2"]);
+    for (const [k, ts] of Object.entries(ENC_TS)) L.put(`enc:${k}`, { ts, ly: 0, glow: 0 });
+    L.put("enc:frame", { x: f.x, y: f.y, w: f.w, h: f.h, s: 1, o: 1 });
+    for (let k = 1; k <= 5; k++) L.put(`enc:g${k}`, { x: f.x + 10 * k, y: f.y - 6 * k, w: f.w, h: f.h, s: 1, o: 1 - 0.14 * k });
+    towerBase(L, "enc", G.x, G.w, -1);
+    miniInto(L, G.blocks.mhsa, { o: 0, top: 0 }); // Scene 8's arcs stay inside the block, out of sight for now
+    return L.put("enc:n6", { x: f.x - f.w / 2 - 62, y: f.y + 8, o: 1 }).put("enc:title", { x: G.x, y: 468, o: 1 });
+  }
+  function decTower(L, ntok = 4) {
+    const G = decGeo(), f = G.frame;
+    for (const [k, b] of Object.entries(G.blocks)) L.put(`dec:${k}`, { ...b, s: 1, o: 1, lo: 1 });
+    for (const [k, g] of Object.entries(G.wires)) L.put(`dec:${k}`, { geo: g, o: 1, draw: 1 });
+    L.put("dec:frame", { x: f.x, y: f.y, w: f.w, h: f.h, s: 1, o: 1 });
+    for (let k = 1; k <= 5; k++) L.put(`dec:g${k}`, { x: f.x + 8 * k, y: f.y - 6 * k, w: f.w, h: f.h, s: 1, o: 1 - 0.14 * k });
+    towerBase(L, "dec", G.x, G.w, 1);
+    tokenRowAt(L, DTOK.slice(0, ntok), G.x, TB.tokY);
+    return L.put("dec:n6", { x: f.x - f.w / 2 - 62, y: f.y + 92, o: 1 }).put("dec:title", { x: G.x, y: 258, o: 1 });
+  }
+  // the decoder's masked self-attention, opened: scores → future positions −∞ → softmax (masked = exactly 0)
+  function maskGrid(L, stage) {
+    const d = digits(), MG = mgGeo(d);
+    L.put("mg:box", { ...MG.box, s: 1, o: 1, lo: 0 });
+    for (let i = 0; i < 4; i++) L.put(`mg:rl${i}`, { x: MG.rlx, y: MG.y0 + i * MG.dy + 7, o: 1 }).put(`mg:cl${i}`, { x: MG.x0 + i * MG.dx, y: MG.cly, o: 1 });
+    for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) {
+      const masked = c > r && stage !== "logits", x = MG.x0 + c * MG.dx, y = MG.y0 + r * MG.dy;
+      const src = stage === "logits" ? `dec.g4.scaled.${r}.${c}` : stage === "masked" ? `dec.g4.masked.${r}.${c}` : `dec.g4.A.${r}.${c}`;
+      L.put(`mg:c${r}${c}`, { x, y, w: MG.cw, h: MG.ch, s: 1, o: 1, lo: 0, cls: masked ? "cell-masked" : "cell" })
+        .put(`mg:v${r}${c}`, { x, y, s: MG.ns, o: 1, src, d: masked && stage === "soft" ? 0 : d, tc: masked ? "masked" : "" });
+    }
+    return L;
+  }
+  // Q, K and V entering a self-attention block from one stream (K, V on the left, Q on the right)
+  function qkvStubs(L, pre, x, w, bottom, yb) {
+    for (const [k, px, lab] of [["sk", x - 0.31 * w, "kl"], ["sv", x - 0.13 * w, "vl"], ["sq", x + 0.22 * w, "ql"]]) {
+      L.put(`${pre}:${k}`, { geo: polyGeo([[x, yb], [px, yb - 10], [px, bottom]], 8), o: 1, draw: 1 });
+      L.put(`${pre}:${lab}`, { x: px + (k === "sq" ? 13 : -12), y: bottom + 21, o: 1 });
+    }
+    return L;
+  }
+  const crossGeo = () => {
+    const D = decGeo(), cb = D.blocks.cross, lx = D.x - D.w / 2;
+    return {
+      k: polyGeo([[466, 512], [466, 488], [972, 488], [972, cb.y - 13], [lx, cb.y - 13]], 12),
+      v: polyGeo([[474, 512], [474, 500], [988, 500], [988, cb.y + 11], [lx, cb.y + 11]], 12),
+      q: polyGeo([[D.x, D.br2], [D.x, cb.y + cb.h / 2]]),
+      kl: { x: lx - 13, y: cb.y - 19 }, vl: { x: lx - 13, y: cb.y + 33 }, ql: { x: D.x - 14, y: cb.y + cb.h / 2 + 18 },
+    };
+  };
+  function probBars(L) {
+    const d = digits();
+    DEC.next.vocab.forEach((w, k) => {
+      const y = PB.y0 + k * PB.dy, pk = DEC.next.probs[k];
+      L.put(`pb:w${k}`, { x: PB.wx - (REG.get(`pb:w${k}`).w * 0.5) / 2, y: y + 8, s: 0.5, o: 1, pill: k === 0 ? 1 : 0 })
+        .put(`pb:bar${k}`, { x: PB.x, y, o: 1, w: probLen(pk), alphaSrc: `dec.next.probs.${k}`, kind: "pbar" })
+        .put(`pb:v${k}`, { x: PB.x + probLen(pk) + 14 + numW(24, d, false) / 2, y, s: 1, o: 1, src: `dec.next.probs.${k}`, d });
+    });
+    return L.put("pb:title", { x: 1690, y: PB.title, o: 1 }).put("pb:note", { x: 1668, y: PB.note, o: 1 });
+  }
+  // the translation so far; the predicted word joins it
+  function outLine(L, { next = false, more = false } = {}) {
+    const ids = ["outl:0", "outl:1", "outl:2", ...(next ? ["pb:w0"] : [])];
+    let x = 1474;
+    ids.forEach((id) => { const w = REG.get(id).w * 0.62; L.put(id, { x: x + w / 2, y: PB.out + 11, s: 0.62, o: 1, pill: 0 }); x += w + 14; });
+    if (more) L.put("outl:more", { x: x + 18, y: PB.out + 10, o: 1 });
+    return L;
+  }
+  const SRC_IDS = ["tok:0", "tok:1", "stok:is", "tok:6", "tok:7"]; // The animal is tired .
+  function L10_zoom() {
+    const L = cap(encTower(HUD(new Layout())), "zoom");
+    return tokenRowAt(L, TOKENS.map((_, j) => `tok:${j}`), 470, TB.tokY);
+  }
+  function L10_example() { return tokenRowAt(cap(encTower(HUD(new Layout())), "example"), SRC_IDS, 470, TB.tokY).put("pair", { x: 960, y: 182, o: 1 }); }
+  function L10_decoder() { return decTower(tokenRowAt(encTower(HUD(new Layout())), SRC_IDS, 470, TB.tokY)); }
+  function L10_mask() { return cap(maskGrid(L10_decoder(), "soft"), "mask").put("dec:mm", { glow: 0.6 }); }
+  function L10_cross() {
+    const L = cap(L10_decoder(), "cross"), Ge = encGeo("tower"), D = decGeo(), X = crossGeo();
+    qkvStubs(L, "enc", Ge.x, Ge.w, Ge.B.mhsa[0] + Ge.B.mhsa[1] / 2, 799);
+    qkvStubs(L, "dec", D.x, D.w, D.B.mm[0] + D.B.mm[1] / 2, 799);
+    for (const k of ["q", "k", "v"]) L.put(`x:${k}`, { geo: X[k], o: 1, draw: 1 }).put(`x:${k}l`, { ...X[`${k}l`], o: 1 });
+    return L;
+  }
+  function L10_output() { return outLine(probBars(L10_cross().hide("cap:cross"))); }
+  function L10_loop() {
+    const L = cap(outLine(probBars(L10_cross().hide("cap:cross")), { next: true, more: true }), "loop");
+    for (let k = 1; k < DEC.next.vocab.length; k++) L.put(`pb:w${k}`, { o: 0.25 }).put(`pb:bar${k}`, { o: 0.25 }).put(`pb:v${k}`, { o: 0.25 });
+    L.put("pb:bar0", { o: 0.25 }).put("pb:v0", { o: 0.25 });
+    tokenRowAt(L, DTOK, decGeo().x, TB.tokY);
+    return L.put("loop:path", { geo: polyGeo([[1872, PB.out], [1898, PB.out], [1898, TB.tokY - 7], [1402, TB.tokY - 7]], 18), o: 1, draw: 1 });
+  }
+  const FIN = { x: 470, y: 300, w: 600, h: 232 }; // the inset that opens out of the encoder's self-attention block
+  function L10_final() {
+    const L = cap(outLine(L10_cross().hide("cap:cross"), { next: true, more: true }), "final");
+    tokenRowAt(L, DTOK, decGeo().x, TB.tokY);
+    // everything we computed lives in this block: it lights up and Scene 8's arcs come back out of it
+    L.put("enc:mhsa", { glow: 1 }).put("fin:box", { ...FIN, s: 1, o: 1, lo: 0, glow: 0.35 });
+    // a faint zoom wedge from the inset down to the block it magnifies
+    const mb = encGeo("tower").blocks.mhsa, by = mb.y - mb.h / 2, iy = FIN.y + FIN.h / 2;
+    L.put("fin:l", { geo: polyGeo([[FIN.x - FIN.w / 2 + 24, iy], [mb.x - mb.w / 2, by]]), o: 1, draw: 1 })
+      .put("fin:r", { geo: polyGeo([[FIN.x + FIN.w / 2 - 24, iy], [mb.x + mb.w / 2, by]]), o: 1, draw: 1 });
+    return miniInto(L, FIN, { top: 0 });
+  }
+
+  // ---------------------------------------------------------------------------- EXPLORE
+  const exScaleValue = () => (EX.scale === "paper" ? Math.sqrt(E.CONFIG.dK) : EX.scale === "none" ? 1 : EX.custom);
+  // recompute the whole model with the explore settings; versioned so changed numbers re-bind and flip
+  function exRecompute() {
+    const scale = exScaleValue();
+    const M = E.computeModel(E.PARAMS, { tokens: TOKENS, positionOn: EX.pos, scale });
+    const H = M.heads[EX.h];
+    EX.ver++;
+    SRC[`ex${EX.ver}`] = { H, scale, sum: H.A[EX.q].reduce((a, b) => a + b, 0) };
+    delete SRC[`ex${EX.ver - 8}`];
+  }
+  function L_explore() {
+    if (!EX.ver) exRecompute();
+    const X = SRC[`ex${EX.ver}`], P = (p) => `ex${EX.ver}.${p}`, q = EX.q, w = TOKENS[q], d = digits();
+    const L = cap(HUD(new Layout()), EX.pos ? "explore" : "nopos");
+    const qv = leftVec("ex:q", d), zv = leftVec("ex:z", d);
+    L.put("ex:qword", { x: qv.x, y: AT.qy - 82, o: 1, text: w }).put("ex:qnode", { x: qv.x, y: AT.qy - 46, o: 1 })
+      .put("ex:q", { x: qv.x, y: AT.qy, s: 1, o: 1, orient: "row", gap: 90, src: P(`H.Q.${q}`), d })
+      .put("ex:qlab", { x: qv.lab, y: AT.qy + 10, o: 1, rich: `\\i{q}_{${w}} =` })
+      .put("ex:z", { x: zv.x, y: EXZ, s: 1, o: 1, orient: "row", gap: 90, src: P(`H.Z.${q}`), d })
+      .put("ex:zlab", { x: zv.lab, y: EXZ + 10, o: 1, rich: `\\i{z}_{${w}} =` });
+    for (let j = 0; j < N; j++) {
+      const y = rowY(j), a = X.H.A[q][j], aSrc = P(`H.A.${q}.${j}`);
+      L.put(`ex:lab:${j}`, { x: AT.labX + (REG.get(`ex:lab:${j}`).w * 0.62) / 2, y: y + 11, s: 0.62, o: 1, pill: j === q ? 1 : 0 })
+        .put(`ex:node:${j}`, { x: AT.nodeX, y, o: 1 })
+        .put(`ex:k:${j}`, { x: AT.keyX, y, s: 1, o: 1, orient: "row", gap: 77, src: P(`H.K.${j}`), d })
+        .put(`ex:s:${j}`, { x: AT.scoreX, y, s: 1, o: 1, src: P(`H.scaled.${q}.${j}`), d })
+        .put(`ex:bar:${j}`, { x: AT.barX, y, o: 1, w: exBarLen(a), alphaSrc: aSrc, kind: "xbar" })
+        .put(`ex:a:${j}`, { x: AT.barX + exBarLen(a) + 14 + numW(26, d, false) / 2, y, s: 1, o: 1, src: aSrc, d })
+        .put(`ex:w:${j}`, { geo: fanGeo(j), o: alphaOpacity(a), draw: 1, sw: alphaWidth(a), alphaSrc: aSrc });
+    }
+    L.put("ex:hk", { x: AT.keyX, y: AT.hdrY, o: 1 });
+    if (EX.scale === "custom") L.put("ex:hsn", { x: AT.scoreX, y: AT.hdrY, o: 1, src: P("scale"), d: 2 });
+    else L.put("ex:hs", { x: AT.scoreX, y: AT.hdrY, o: 1, rich: EX.scale === "paper" ? "\\i{q}·\\i{k}_{j} / √\\i{d}_{k}" : "\\i{q}·\\i{k}_{j}  (unscaled)" });
+    return L.put("ex:ha", { x: AT.barX + 60, y: AT.hdrY, o: 1 }).put("ex:sum", { x: AT.barX + 150, y: AT.sumY, o: 1, src: P("sum"), d });
+  }
+  async function enterExplore(run) {
+    exRecompute();
+    const L = L_explore();
+    await fadeOutsideOf(run, L, 500);
+    if (run.dead) return;
+    await applyLayout(L, { dur: 1000, run });
+  }
+  // every change re-runs the engine; the table morphs to the new numbers, a new query also re-flows its values
+  async function exploreUpdate(run, kind) {
+    await applyLayout(L_explore(), { dur: kind === "slide" ? 140 : 900, run });
+    if (run.dead || kind !== "query") return;
+    const X = SRC[`ex${EX.ver}`], A = X.H.A[EX.q], amax = Math.max(...A), z = REG.get("ex:z");
+    await Promise.all([...Array(N).keys()].map(async (j) => {
+      const st = REG.get(`ex:st:${j}`);
+      const cap = run.own(new DotObj(null, LAYER.fx, { r: 3 + 7 * (A[j] / amax), cls: "f-v", glow: "g-v" }));
+      const ride = { f: 0, apply() { const pt = st.pointAt(this.f); cap.set({ x: pt.x, y: pt.y }); } };
+      run.set(st, { o: Math.min(0.85, alphaOpacity(A[j])), draw: 0 });
+      run.set(cap, { o: 1 }); ride.apply();
+      await Promise.all([run.tween(st, { draw: 1 }, { dur: 850 }), run.tween(ride, { f: 1 }, { dur: 850 })]);
+      await Promise.all([run.tween(cap, { o: 0 }, { dur: 200 }), run.tween(st, { o: 0 }, { dur: 450 })]);
+    }));
+    if (run.dead) return;
+    z.cells.forEach((c) => { c.h = 0.9; c.apply(); });
+    await Promise.all(z.cells.map((c) => run.tween(c, { h: 0 }, { dur: 500 })));
+  }
+  const inExplore = () => BEATS[director.index]?.id === "explore";
+  function exploreDo(kind, change) {
+    if (!inExplore()) return;
+    change();
+    exRecompute();
+    syncExploreUI();
+    director.playFn((run) => exploreUpdate(run, kind));
+  }
+  function exploreSelect(j) { if (j !== EX.q) exploreDo("query", () => { EX.q = j; }); }
+  function syncExploreUI() {
+    const pressed = (sel, on) => document.querySelectorAll(sel).forEach((b) => b.setAttribute("aria-pressed", String(on(b))));
+    pressed("#explore-ui [data-head]", (b) => Number(b.dataset.head) === EX.h);
+    pressed("#explore-ui [data-pos]", (b) => (b.dataset.pos === "1") === EX.pos);
+    pressed("#explore-ui [data-scale]", (b) => b.dataset.scale === EX.scale);
+    $("ex-scale").disabled = EX.scale !== "custom";
+    $("ex-scale").value = String(Math.log2(EX.custom));
+    $("ex-scale-out").textContent = `÷ ${exScaleValue().toFixed(2)}`;
+    $("ex-whatif").hidden = EX.scale !== "custom";
+  }
+
   // ---------------------------------------------------------------------------- CHOREOGRAPHY HELPERS
   const layoutOf = (i) => BEATS[i].layout();
   function applyLayout(L, { dur = 700, run = null } = {}) {
     const ps = [];
     for (const [id, obj] of REG) {
-      const t = L.get(id);
+      const t0 = L.get(id), t = t0 && (t0.o ?? 0) > 0 ? { ...obj.layoutDefaults(), ...t0 } : t0;
       if (run && run.dead) break;
       ps.push(obj.morph(t || { o: 0 }, { dur: t && t._dur !== undefined ? t._dur : t ? dur : Math.min(dur, 450), delay: (t && t._delay) || 0, run }));
     }
@@ -1874,7 +2607,378 @@ body.idle #controls, body.idle #timeline { opacity: 0.12; }
     }));
   }
 
+  // ---- Scene 8: pull back — the table folds into one row; its α-wires bend into head 1's arcs
+  async function pullBack(run) {
+    const L = L8_heads(), keep = new Set(L.keys()), late = ["zlab1", "hd:lab1", "hd:w1", "eq8a"];
+    await Promise.all([...REG.values()].filter((o) => o.id && !keep.has(o.id) && o.o > 0.01).map((o) => run.morph(o, { o: 0 }, { dur: 500 })));
+    if (run.dead) return;
+    // words and weights travel dimmed (their paths cross), then brighten where they land; labels arrive last
+    const movers = new Set([...Array(N).keys()].flatMap((j) => [`tok:${j}`, `score:${j}`]));
+    await Promise.all([...movers].map((id) => run.morph(id, { o: 0.3 }, { dur: 300 })));
+    if (run.dead) return;
+    await applyLayout(new Layout([...L].map(([id, t]) => [id, late.includes(id) ? { ...t, o: 0 } : movers.has(id) ? { ...t, o: 0.3 } : t])), { dur: 1600, run });
+    await Promise.all([...[...movers].map((id) => run.morph(id, L.get(id), { dur: 450 })), ...late.map((id, k) => run.morph(id, L.get(id), { dur: 600, delay: k * 120 }))]);
+  }
+
+  // ---- Scene 8: head 2 — its own W_Q, W_K, W_V give its own weights over the same row
+  async function secondHead(run) {
+    const L = L8_head2(), d = digits();
+    await Promise.all([run.morph("hd:lab2", L.get("hd:lab2"), { dur: 600 }), run.morph("hd:w2", L.get("hd:w2"), { dur: 600, delay: 150 }),
+      ...[...Array(N).keys()].map((j) => run.morph(`node2:${j}`, L.get(`node2:${j}`), { dur: 500, delay: 250 }))]);
+    if (run.dead) return;
+    // every arc of head 2 at once, each drawn from head 2's α (the engine's softmax for this head)
+    await Promise.all([...Array(N).keys()].map((j) => {
+      const w = REG.get(`awire2:${j}`), t = L.get(`awire2:${j}`);
+      w.setAlphaSrc(t.alphaSrc);
+      w.morph({ geo: t.geo, sw: t.sw }, { dur: 0 });
+      run.set(w, { o: t.o, draw: 0 });
+      return run.tween(w, { draw: 1 }, { dur: 1100, ease: EASE.out });
+    }));
+    if (run.dead) return;
+    await Promise.all([...Array(N).keys()].map((j) => run.morph(`a2:${j}`, L.get(`a2:${j}`), { dur: 500, delay: j * 40 })));
+    if (run.dead) return;
+    // weighted values travel back along head 2's arcs into "it"; the result is head 2's output
+    const caps = [...Array(N).keys()].map((j) => {
+      const cap = run.own(new DotObj(null, LAYER.fx, { r: 3 + 7 * (ALPHA2[j] / ALPHA2_MAX), cls: "f-v", glow: "g-v" }));
+      const g = arcGeo(j, 1);
+      run.set(cap, { x: g[6], y: g[7], o: 0 });
+      return cap;
+    });
+    await Promise.all(caps.map((c) => run.tween(c, { o: 1 }, { dur: 250 })));
+    await Promise.all(caps.map((c, j) => {
+      const w = REG.get(`awire2:${j}`);
+      const ride = { f: 0, apply() { const pt = w.pointAt(1 - this.f); c.set({ x: pt.x, y: pt.y }); } };
+      return run.tween(ride, { f: 1 }, { dur: 1100 });
+    }));
+    if (run.dead) return;
+    const z2 = REG.get("z2");
+    z2.bind(`heads.1.Z.${FOCUS}`, d);
+    run.set(z2, { x: L.get("z2").x, y: H8.z2y, s: 1, o: 0 });
+    await Promise.all([...caps.map((c) => run.tween(c, { o: 0, s: 1.6 }, { dur: 450 })), run.tween(z2, { o: 1 }, { dur: 600, delay: 150 }),
+      run.morph("zlab2", L.get("zlab2"), { dur: 600, delay: 150 })]);
+    await run.morph("cap:heads", L.get("cap:heads"), { dur: 700 });
+  }
+
+  // ---- Scene 8: the two head outputs slide together and become one 4-vector
+  async function concatHeads(run) {
+    const L = L8_concat(), d = digits(), cat = REG.get("concat");
+    await Promise.all([run.morph("cap:heads", { o: 0 }, { dur: 400 }), run.morph("zlab1", { o: 0 }, { dur: 400 }), run.morph("zlab2", { o: 0 }, { dur: 400 })]);
+    await Promise.all(["z", "z2"].map((id) => run.tween(REG.get(id), { x: L.get(id).x, y: H8.catY, s: 26 / 28 }, { dur: 1100 })));
+    if (run.dead) return;
+    cat.morph({ orient: "row", gap: 80, src: `Concat.${FOCUS}`, d }, { dur: 0 });
+    run.set(cat, { x: H8.zx, y: H8.catY, s: 1, o: 0 });
+    await Promise.all([run.tween(cat, { o: 1 }, { dur: 450 }), run.tween(REG.get("z"), { o: 0 }, { dur: 450 }), run.tween(REG.get("z2"), { o: 0 }, { dur: 450 })]);
+    await Promise.all(["concatlab", "eq8b", "ann8:demo", "ann8:paper"].map((id, k) => run.morph(id, L.get(id), { dur: 700, delay: k * 150 })));
+  }
+
+  // ---- Scene 8: Concat · W_O — each output component is the 4-vector against one column of W_O
+  async function throughWO(run) {
+    const L = L8_wo(), d = digits(), slow = ui.showCalc ? 1.5 : 1;
+    const cat = REG.get("concat"), W = REG.get("W:o"), mh = REG.get("mh");
+    await Promise.all(["W:o", "Wlab:o", "concat", "concatlab"].map((id) => run.morph(id, L.get(id), { dur: 1100 })));
+    if (run.dead) return;
+    mh.morph({ orient: "row", gap: 104, src: `MH.${FOCUS}`, d }, { dur: 0 });
+    run.set(mh, { x: H8.zx, y: H8.mhY, s: 1, o: 1 });
+    mh.cells.forEach((c) => run.set(c, { o: 0, h: 0 }));
+    for (let c = 0; c < 4; c++) {
+      await Promise.all([run.tween(W.colHl[c], { h: 1 }, { dur: 240 * slow }), ...cat.cells.map((cc) => run.tween(cc, { h: 0.55 }, { dur: 240 * slow }))]);
+      if (run.dead) return;
+      await run.tween(mh.cells[c], { o: 1 }, { dur: 320 * slow });
+      await Promise.all([run.tween(W.colHl[c], { h: 0 }, { dur: 200 }), ...cat.cells.map((cc) => run.tween(cc, { h: 0 }, { dur: 200 }))]);
+    }
+    await run.morph("mhlab", L.get("mhlab"), { dur: 500 });
+  }
+
+  // ---- Scene 9: the block outline closes around the machinery, which shrinks inside it
+  async function collapseIntoBlock(run) {
+    const L = L9_block(), keep = new Set(L.keys());
+    await Promise.all([...REG.values()].filter((o) => o.id && !keep.has(o.id) && o.o > 0.01).map((o) => run.morph(o, { o: 0 }, { dur: 500 })));
+    if (run.dead) return;
+    const mb = REG.get("enc:mhsa"), t = L.get("enc:mhsa");
+    run.set(mb, { x: H8.cx, y: H8.row, w: 1190, h: 650, ly: t.ly, s: 1, lo: 0, o: 0 });
+    await run.tween(mb, { o: 1 }, { dur: 450 });
+    const mini = [...Array(N).keys()].flatMap((j) => [`node:${j}`, `node2:${j}`, `awire:${j}`, `awire2:${j}`]);
+    await Promise.all([
+      run.tween(mb, { x: t.x, y: t.y, w: t.w, h: t.h }, { dur: 1700 }),
+      ...mini.map((id) => run.morph(id, L.get(id), { dur: 1700 })),
+      run.morph("mh", L.get("mh"), { dur: 1700 }),
+    ]);
+    if (run.dead) return;
+    const w0 = REG.get("enc:w0");
+    w0.morph({ geo: L.get("enc:w0").geo }, { dur: 0 });
+    run.set(w0, { o: 1, draw: 0 });
+    await Promise.all([run.tween(mb, { lo: 1 }, { dur: 500 }), run.morph("x9", L.get("x9"), { dur: 600 }), run.morph("x9lab", L.get("x9lab"), { dur: 600 }),
+      run.tween(w0, { draw: 1 }, { dur: 600, delay: 300 }), run.morph("mhlab", L.get("mhlab"), { dur: 600, delay: 200 }), run.morph("cap:block", L.get("cap:block"), { dur: 700, delay: 300 })]);
+  }
+
+  // ---- Scene 9: residual connection — x_it takes the bypass, meets MultiHead_it, the sum is normalised
+  async function residualAdd(run) {
+    const L = L9_residual(), d = digits(), slow = ui.showCalc ? 1.4 : 1;
+    const draw0 = (id) => { const w = REG.get(id); w.morph({ geo: L.get(id).geo }, { dur: 0 }); run.set(w, { o: 1, draw: 0 }); return w; };
+    await Promise.all([run.morph("enc:an1", L.get("enc:an1"), { dur: 600 }), run.morph("mhlab", { o: 0 }, { dur: 300 }), run.morph("cap:block", { o: 0 }, { dur: 400 })]);
+    if (run.dead) return;
+    // a copy of x_it rides the bypass wire around the attention block
+    const r = draw0("enc:r1"), res = REG.get("res9"), x9 = REG.get("x9");
+    res.morph({ src: `X.${FOCUS}`, d, orient: "row", gap: 80 }, { dur: 0 });
+    run.set(res, { x: x9.x, y: x9.y, s: 1, o: 1 });
+    res.cells.forEach((c) => run.set(c, { o: 1, h: 0 }));
+    const ride = { f: 0, apply() { const pt = r.pointAt(this.f); res.set({ x: pt.x, y: pt.y }); } };
+    await Promise.all([run.tween(res, { s: 0.5 }, { dur: 350 }), run.tween(r, { draw: 1 }, { dur: 1500 * slow }), run.tween(ride, { f: 1 }, { dur: 1500 * slow })]);
+    if (run.dead) return;
+    // both inputs of the addition line up on the workbench
+    const w1 = draw0("enc:w1");
+    await Promise.all([
+      run.tween(res, { x: WB9.x, y: WB9.rx, s: 1 }, { dur: 900 }), run.morph("mh", L.get("mh"), { dur: 1000, delay: 120 }),
+      run.tween(w1, { draw: 1 }, { dur: 600, delay: 400 }),
+    ]);
+    if (run.dead) return;
+    await Promise.all(["wb9:lx", "wb9:lmh", "wb9:plus"].map((id, k) => run.morph(id, L.get(id), { dur: 450, delay: k * 80 })));
+    if (run.dead) return;
+    const rule = REG.get("wb9:rule");
+    rule.morph({ geo: L.get("wb9:rule").geo }, { dur: 0 });
+    run.set(rule, { o: 1, draw: 0 });
+    await Promise.all([run.tween(rule, { draw: 1 }, { dur: 350 }), run.morph("wb9:eq", L.get("wb9:eq"), { dur: 350 })]);
+    const sum = REG.get("r1v"), mh = REG.get("mh");
+    sum.morph({ src: `R1.${FOCUS}`, d, orient: "row", gap: 80 }, { dur: 0 });
+    run.set(sum, { x: WB9.x, y: WB9.rs, s: 1, o: 1 });
+    sum.cells.forEach((c) => run.set(c, { o: 0, h: 0 }));
+    for (let c = 0; c < 4; c++) {
+      await Promise.all([run.tween(res.cells[c], { h: 1 }, { dur: 160 * slow }), run.tween(mh.cells[c], { h: 1 }, { dur: 160 * slow })]);
+      if (run.dead) return;
+      await run.tween(sum.cells[c], { o: 1 }, { dur: 260 * slow });
+      await Promise.all([run.tween(res.cells[c], { h: 0 }, { dur: 160 }), run.tween(mh.cells[c], { h: 0 }, { dur: 160 })]);
+    }
+    await run.wait(350 * slow);
+    if (run.dead) return;
+    // LayerNorm: the sum enters Add & Norm and leaves it normalised (mean 0, variance 1 across its 4 numbers)
+    const ln = REG.get("ln1"), G = encGeo("big");
+    ln.morph({ src: `R1.${FOCUS}`, d, orient: "row", gap: 80 }, { dur: 0 });
+    run.set(ln, { x: WB9.x, y: WB9.rs, s: 1, o: 1 });
+    await run.tween(ln, { x: G.x, y: G.B.an1[0] }, { dur: 1000 });
+    await Promise.all([ln.morph({ src: `LN1.${FOCUS}.out`, d, o: 1 }, { dur: 700, run }), run.tween(ln, { y: WB9.ln1 }, { dur: 800, ease: EASE.out }),
+      run.morph("eq9", L.get("eq9"), { dur: 800, delay: 200 })]);
+  }
+
+  // ---- Scene 9: the feed-forward network, briefly: 4 → 8 → ReLU → 4, then the second Add & Norm
+  async function ffnBrief(run) {
+    const L = L9_ffn(), d = digits(), slow = ui.showCalc ? 1.3 : 1;
+    const draw0 = (id) => { const w = REG.get(id); w.morph({ geo: L.get(id).geo }, { dur: 0 }); run.set(w, { o: 1, draw: 0 }); return w; };
+    await Promise.all(["res9", "mh", "r1v", "wb9:lx", "wb9:lmh", "wb9:plus", "wb9:rule", "wb9:eq"].map((id) => run.morph(id, { o: 0 }, { dur: 450 })));
+    const w2 = draw0("enc:w2");
+    await Promise.all([run.morph("enc:ffn", L.get("enc:ffn"), { dur: 600 }), run.tween(w2, { draw: 1 }, { dur: 500, delay: 200 })]);
+    if (run.dead) return;
+    await run.morph("ffn:box", L.get("ffn:box"), { dur: 500 });
+    // inputs: the four numbers of LayerNorm's output
+    const ln = REG.get("ln1");
+    await Promise.all([0, 1, 2, 3].map((i) => {
+      const v = REG.get(`ffn:iv${i}`), t = L.get(`ffn:iv${i}`), a = ln.cellAbs(i);
+      v.bind(t.src, d);
+      run.set(v, { x: a.x, y: a.y, s: 24 / 22, o: 1, tf: 1 });
+      return Promise.all([run.tween(v, { x: t.x, y: t.y, s: 1 }, { dur: 900 * slow, delay: i * 60 }), run.morph(`ffn:i${i}`, L.get(`ffn:i${i}`), { dur: 500, delay: 400 })]);
+    }));
+    if (run.dead) return;
+    // 4 → 8: every hidden unit receives all four inputs (x·W1 + b1)
+    await Promise.all([...Array(8).keys()].map((k) => {
+      const e = REG.get(`ffn:e1:${k}`), v = REG.get(`ffn:hv${k}`);
+      run.set(e, { o: 1, draw: 0 });
+      v.bind(`Hpre.${FOCUS}.${k}`, d);
+      run.set(v, { x: FC.hX + 54, y: fcH(k), s: 1, o: 0, tf: 1 });
+      return Promise.all([run.tween(e, { draw: 1 }, { dur: 700 * slow }), run.morph(`ffn:h${k}`, { x: FC.hX, y: fcH(k), o: 1 }, { dur: 400, delay: 500 * slow }),
+        run.tween(v, { o: 1 }, { dur: 400, delay: 600 * slow })]);
+    }));
+    await run.morph("ffn:relu", L.get("ffn:relu"), { dur: 400 });
+    await run.wait(500 * slow);
+    if (run.dead) return;
+    // ReLU: negative hidden values become exactly 0 and those units stop contributing
+    await Promise.all([...Array(8).keys()].map((k) => Promise.all([
+      run.morph(`ffn:hv${k}`, L.get(`ffn:hv${k}`), { dur: 600 }), run.morph(`ffn:h${k}`, L.get(`ffn:h${k}`), { dur: 600 }),
+    ])));
+    if (run.dead) return;
+    // 8 → 4 (·W2 + b2): the outputs
+    await Promise.all([...Array(8).keys()].map((k) => {
+      const e = REG.get(`ffn:e2:${k}`);
+      run.set(e, { o: L.get(`ffn:e2:${k}`).o, draw: 0 });
+      return run.tween(e, { draw: 1 }, { dur: 700 * slow });
+    }));
+    await Promise.all([0, 1, 2, 3].flatMap((i) => [run.morph(`ffn:o${i}`, L.get(`ffn:o${i}`), { dur: 400 }), run.morph(`ffn:ov${i}`, L.get(`ffn:ov${i}`), { dur: 500, delay: 150 })]));
+    await Promise.all([run.morph("ffn:dims1", L.get("ffn:dims1"), { dur: 600 }), run.morph("ffn:dims2", L.get("ffn:dims2"), { dur: 600, delay: 200 })]);
+    if (run.dead) return;
+    // second Add & Norm: the FFN output plus the bypassed LayerNorm output, normalised → the layer's output
+    const w3 = draw0("enc:w3"), r2w = draw0("enc:r2"), w4 = draw0("enc:w4");
+    await Promise.all([run.morph("enc:an2", L.get("enc:an2"), { dur: 500 }), run.tween(w3, { draw: 1 }, { dur: 700 }), run.tween(r2w, { draw: 1 }, { dur: 1100 })]);
+    await Promise.all([run.tween(w4, { draw: 1 }, { dur: 400 }), run.morph("ln2", L.get("ln2"), { dur: 600, delay: 250 })]);
+  }
+
+  // ---- Scene 9: the paper stacks six of these layers; the demo computed one
+  async function stackLayers(run) {
+    const L = L9_stack(), f = L.get("enc:frame");
+    await applyLayout(new Layout([...L].map(([id, t]) => [id, id.startsWith("enc:g") ? { ...t, x: f.x, y: f.y, o: 0 } : t])), { dur: 900, run });
+    if (run.dead) return;
+    await Promise.all([1, 2, 3, 4, 5].map((k) => {
+      const g = REG.get(`enc:g${k}`), t = L.get(`enc:g${k}`);
+      run.set(g, { x: f.x, y: f.y, w: f.w, h: f.h, o: 0 });
+      return run.tween(g, { x: t.x, y: t.y, o: t.o }, { dur: 900, delay: k * 130, ease: EASE.out });
+    }));
+    await Promise.all([run.morph("stack:paper", L.get("stack:paper"), { dur: 600 }), run.morph("stack:demo", L.get("stack:demo"), { dur: 600, delay: 200 })]);
+  }
+
+  // Reveal parts of a layout in groups, one group after another; wires draw themselves.
+  async function reveal(run, L, groups, { dur = 600, gap = 220 } = {}) {
+    const ps = [];
+    groups.forEach((ids, g) => {
+      for (const id of ids) {
+        const t = L.get(id), o = REG.get(id);
+        if (!t) continue;
+        if (o instanceof PathObj && t.geo) {
+          o.morph({ geo: t.geo }, { dur: 0 });
+          run.set(o, { o: t.o ?? 1, draw: 0 });
+          ps.push(run.tween(o, { draw: 1 }, { dur, delay: g * gap }));
+        } else ps.push(run.morph(id, t, { dur, delay: g * gap }));
+      }
+    });
+    await Promise.all(ps);
+  }
+  const fadeOutsideOf = (run, L, dur = 450) => Promise.all([...REG.values()].filter((o) => o.id && !L.has(o.id) && o.o > 0.01).map((o) => run.morph(o, { o: 0 }, { dur })));
+
+  // ---- Scene 10: zoom out — the encoder layer becomes the left tower of the translation Transformer
+  async function zoomOut(run) {
+    const L = L10_zoom();
+    await fadeOutsideOf(run, L);
+    if (run.dead) return;
+    await run.morph("cap:zoom", L.get("cap:zoom"), { dur: 600 });
+    const tower = [...L.keys()].filter((id) => (id.startsWith("enc:") && !/^enc:(emb|pe|peicon|pelab|win|wemb|wpe|n6|title)$/.test(id)) || MINI.includes(id));
+    await Promise.all(tower.map((id) => run.morph(id, L.get(id), { dur: 1600 })));
+    if (run.dead) return;
+    await reveal(run, L, [["enc:emb", "enc:wemb", "enc:pe", "enc:peicon", "enc:pelab", "enc:wpe"], [...TOKENS.map((_, j) => `tok:${j}`), "enc:win"], ["enc:n6", "enc:title"]], { dur: 600, gap: 320 });
+  }
+
+  // ---- Scene 10: a separate translation example — the guided sentence gives way to "The animal is tired ."
+  async function example(run) {
+    const L = L10_example();
+    await Promise.all([run.morph("cap:zoom", { o: 0 }, { dur: 400 }), run.morph("cap:example", L.get("cap:example"), { dur: 600, delay: 350 }), run.morph("pair", L.get("pair"), { dur: 700, delay: 700 })]);
+    if (run.dead) return;
+    await run.wait(250);
+    await applyLayout(L, { dur: 1300, run });
+  }
+
+  // ---- Scene 10: the decoder tower, built from the bottom up in the same visual language
+  async function buildDecoder(run) {
+    const L = L10_decoder();
+    await Promise.all([run.morph("cap:example", { o: 0 }, { dur: 400 }), run.morph("pair", { o: 0 }, { dur: 400 })]);
+    if (run.dead) return;
+    await reveal(run, L, [
+      [...DTOK.slice(0, 4), "dec:win"],
+      ["dec:emb", "dec:wemb", "dec:pe", "dec:peicon", "dec:pelab", "dec:wpe"],
+      ["dec:w0", "dec:mm", "dec:r1"], ["dec:w1", "dec:an1"], ["dec:w2", "dec:cross", "dec:r2"], ["dec:w3", "dec:an2"],
+      ["dec:w4", "dec:ffn", "dec:r3"], ["dec:w5", "dec:an3"],
+      ["dec:frame", "dec:g1", "dec:g2", "dec:g3", "dec:g4", "dec:g5", "dec:n6"],
+      ["dec:w6", "dec:lin"], ["dec:w7", "dec:sm", "dec:title"], ["dec:w8"],
+    ], { dur: 520, gap: 250 });
+  }
+
+  // ---- Scene 10: masked self-attention, opened: future positions get −∞ before softmax, so exactly 0 after
+  async function maskOpen(run) {
+    const L = L10_mask(), mm = decGeo().blocks.mm, box = REG.get("mg:box");
+    run.set(box, { x: mm.x, y: mm.y, w: mm.w, h: mm.h, s: 1, o: 0, lo: 0 });
+    await Promise.all([run.tween(box, { o: 1 }, { dur: 300 }), run.morph("dec:mm", { glow: 0.6 }, { dur: 400 })]);
+    const MB = mgGeo(digits()).box;
+    await run.tween(box, { x: MB.x, y: MB.y, w: MB.w, h: MB.h }, { dur: 900 });
+    if (run.dead) return;
+    const stage = (st) => maskGrid(new Layout(), st);
+    const S0 = stage("logits"), S1 = stage("masked");
+    await Promise.all([0, 1, 2, 3].flatMap((i) => [run.morph(`mg:rl${i}`, S0.get(`mg:rl${i}`), { dur: 400 }), run.morph(`mg:cl${i}`, S0.get(`mg:cl${i}`), { dur: 400 })]));
+    // every query–key score, q_i·k_j / √d_k, before masking
+    await Promise.all([...S0.keys()].filter((id) => /^mg:[cv]\d\d$/.test(id)).map((id) => run.morph(id, S0.get(id), { dur: 500, delay: 40 * (Number(id.slice(-2, -1)) + Number(id.slice(-1))) })));
+    await run.wait(700);
+    if (run.dead) return;
+    // the future (key position after the query position) is set to −∞
+    await Promise.all([...S1.keys()].filter((id) => /^mg:[cv]\d\d$/.test(id) && Number(id.slice(-1)) > Number(id.slice(-2, -1))).map((id, k) => run.morph(id, S1.get(id), { dur: 550, delay: 90 * k })));
+    await run.wait(700);
+    if (run.dead) return;
+    // softmax along each row: the −∞ entries become exactly 0
+    await Promise.all([...L.keys()].filter((id) => /^mg:[cv]\d\d$/.test(id)).map((id) => run.morph(id, L.get(id), { dur: 600, delay: 120 * Number(id.slice(-2, -1)) })));
+    await run.morph("cap:mask", L.get("cap:mask"), { dur: 600 });
+  }
+
+  // ---- Scene 10: cross-attention — Q rises from the decoder; K and V cross over from the encoder output
+  async function crossOpen(run) {
+    const L = L10_cross(), mm = decGeo().blocks.mm;
+    const grid = [...REG.keys()].filter((id) => /^mg:(rl|cl|c|v)/.test(id));
+    await Promise.all([...grid.map((id) => run.morph(id, { o: 0 }, { dur: 350 })), run.morph("cap:mask", { o: 0 }, { dur: 350 }), run.morph("dec:mm", { glow: 0 }, { dur: 600 })]);
+    await run.tween(REG.get("mg:box"), { x: mm.x, y: mm.y, w: mm.w, h: mm.h, o: 0 }, { dur: 700 });
+    if (run.dead) return;
+    // self-attention: Q, K and V branch from one and the same stream
+    await reveal(run, L, [["enc:sk", "enc:sv", "enc:sq", "dec:sk", "dec:sv", "dec:sq"], ["enc:kl", "enc:vl", "enc:ql", "dec:kl", "dec:vl", "dec:ql"]], { dur: 650, gap: 350 });
+    if (run.dead) return;
+    // cross-attention: K and V come from the encoder output, Q from the decoder below the block
+    await reveal(run, L, [["x:k", "x:v"], ["x:kl", "x:vl"]], { dur: 1300, gap: 900 });
+    await Promise.all([pulse(run, "x:k", "k", { dur: 1300 }), pulse(run, "x:v", "v", { dur: 1300, delay: 120 }), reveal(run, L, [["x:q"], ["x:ql"]], { dur: 700, gap: 500 })]);
+    await Promise.all([pulse(run, "x:q", "q", { dur: 700 }), run.morph("cap:cross", L.get("cap:cross"), { dur: 600 })]);
+  }
+
+  // a signal climbing the decoder stream, block by block
+  async function decoderPulse(run, dur = 1700) {
+    const ws = ["w0", "w1", "w2", "w3", "w4", "w5", "w6", "w7", "w8"].map((k) => `dec:${k}`);
+    for (const id of ws) { await pulse(run, id, "n", { dur: dur / ws.length }); if (run.dead) return; }
+  }
+
+  // ---- Scene 10: the decoder's output → Linear → Softmax → next-token probabilities (illustrative)
+  async function outputProbs(run) {
+    const L = L10_output(), d = digits();
+    await run.morph("cap:cross", { o: 0 }, { dur: 400 });
+    await Promise.all([reveal(run, L, [["outl:0", "outl:1", "outl:2"]], { dur: 600 }), decoderPulse(run)]);
+    if (run.dead) return;
+    await Promise.all([run.morph("pb:title", L.get("pb:title"), { dur: 500 }), ...DEC.next.vocab.map((_, k) => run.morph(`pb:w${k}`, { ...L.get(`pb:w${k}`), pill: 0 }, { dur: 500, delay: k * 60 }))]);
+    await Promise.all(DEC.next.vocab.map((_, k) => {
+      const b = REG.get(`pb:bar${k}`), t = L.get(`pb:bar${k}`), v = REG.get(`pb:v${k}`), tv = L.get(`pb:v${k}`);
+      b.setAlphaSrc(t.alphaSrc, "pbar");
+      run.set(b, { x: t.x, y: t.y, o: 1, w: 0 });
+      v.bind(tv.src, d);
+      run.set(v, { x: PB.x + 14, y: tv.y, s: 1, o: 0, tf: 1 });
+      return Promise.all([run.tween(b, { w: t.w }, { dur: 1000, delay: k * 70, ease: EASE.out }), run.tween(v, { x: tv.x, o: 1 }, { dur: 1000, delay: k * 70, ease: EASE.out })]);
+    }));
+    await Promise.all([run.morph("pb:note", L.get("pb:note"), { dur: 600 }), run.morph("pb:w0", L.get("pb:w0"), { dur: 600, delay: 300 })]);
+  }
+
+  // ---- Scene 10: autoregressive loop — predict, append, feed back, predict again
+  async function loopBack(run) {
+    const L = L10_loop(), F = REG.get("pb:w0");
+    await Promise.all([run.morph("cap:loop", L.get("cap:loop"), { dur: 600 }), ...[...L.keys()].filter((id) => /^pb:(bar|v|w)[1-5]$|^pb:(bar|v)0$/.test(id)).map((id) => run.morph(id, L.get(id), { dur: 600 }))]);
+    // the chosen word joins the translation so far
+    await run.morph(F, L.get("pb:w0"), { dur: 1100 });
+    if (run.dead) return;
+    // …and is fed back as the next decoder input (outputs are shifted right by one position)
+    const lp = REG.get("loop:path"), tok = REG.get("dtok:4"), tt = L.get("dtok:4");
+    lp.morph({ geo: L.get("loop:path").geo }, { dur: 0 });
+    run.set(lp, { o: 1, draw: 0 });
+    run.set(tok, { x: F.x, y: F.y, s: 0.62, o: 1, pill: 0 });
+    const ride = { f: 0, apply() { const pt = lp.pointAt(this.f); tok.set({ x: pt.x, y: pt.y + 8 }); } };
+    await Promise.all([run.tween(lp, { draw: 1 }, { dur: 1500 }), run.tween(ride, { f: 1 }, { dur: 1500 }), run.tween(tok, { s: 0.5 }, { dur: 1500 })]);
+    if (run.dead) return;
+    await Promise.all([...DTOK.map((id) => run.morph(id, L.get(id), { dur: 700 })), run.morph("outl:more", L.get("outl:more"), { dur: 600, delay: 600 })]);
+    // predict again: the whole decoder runs once more with the longer input
+    await decoderPulse(run, 1500);
+  }
+
+  // ---- Scene 10: final shot — the whole Transformer; the encoder's self-attention block lights up
+  async function finalShot(run) {
+    const L = L10_final();
+    await fadeOutsideOf(run, L, 600);
+    if (run.dead) return;
+    const rest = [...L.keys()].filter((id) => !id.startsWith("cap:") && !MINI.includes(id) && id !== "fin:box");
+    await Promise.all([run.morph("cap:loop", { o: 0 }, { dur: 400 }), ...rest.map((id) => run.morph(id, L.get(id), { dur: 1000 }))]);
+    if (run.dead) return;
+    // Scene 8's arcs fly back out of the block they live in, and open up above it
+    const box = REG.get("fin:box"), mb = encGeo("tower").blocks.mhsa;
+    run.set(box, { x: mb.x, y: mb.y, w: mb.w, h: mb.h, s: 1, o: 0, lo: 0, glow: 0 });
+    MINI.forEach((id) => run.set(REG.get(id), { o: 0.02 }));
+    await Promise.all([run.tween(box, { ...FIN, o: 1, glow: 0.35 }, { dur: 1500 }), ...MINI.map((id) => run.morph(id, L.get(id), { dur: 1500 })),
+      reveal(run, L, [["fin:l", "fin:r"]], { dur: 900 })]);
+    await run.morph("cap:final", L.get("cap:final"), { dur: 900 });
+  }
+
   // ---------------------------------------------------------------------------- SCENES
+  const GUIDED_SCENES = 10; // Explore follows the ten guided scenes
   const SCENES = [
     { label: "Sentence", title: "Sentence" },
     { label: "Vectors", title: "Vectors" },
@@ -1883,9 +2987,10 @@ body.idle #controls, body.idle #timeline { opacity: 0.12; }
     { label: "Scores", title: "Scores" },
     { label: "Softmax", title: "Softmax" },
     { label: "Values", title: "Values" },
-    { label: "Heads", title: "Heads", todo: "M4" },
-    { label: "Encoder", title: "Encoder", todo: "M4" },
-    { label: "Transformer", title: "Transformer", todo: "M5" },
+    { label: "Heads", title: "Multi-head attention" },
+    { label: "Encoder", title: "Encoder layer" },
+    { label: "Transformer", title: "Full Transformer" },
+    { label: "Explore", title: "Explore" },
   ];
   const NOTES = [
     "One sentence, eight tokens. Self-attention lets every token look at every other token directly — one step, regardless of distance (the paper's O(1) path length).",
@@ -1895,6 +3000,10 @@ body.idle #controls, body.idle #timeline { opacity: 0.12; }
     "Now nothing magical happens: one dot product with every Key. We show one slowly; the rest happen at once — one row of QKᵀ is a single matrix product. A larger dot product means a better match for this toy head.",
     "These are raw compatibility scores. Divide by √d_k (here √2; in the paper √64 = 8), then softmax turns them into positive weights that sum to one. The wire thickness now shows the same weights as the bars.",
     "This is the actual information movement: each Value is scaled by its weight and the results are summed. The new vector for ‘it’ mixes information from every position, weighted by attention.",
+    "The same calculation is head 1. Head 2 has its own W_Q, W_K, W_V, so the same sentence gets different weights. Both outputs are concatenated and projected by W_O. The paper uses 8 heads of size 64; we use 2 of size 2. These toy heads were not trained, so they have no learned roles.",
+    "Everything so far is one block: multi-head self-attention. Its output is added to its input (residual connection) and normalised: LayerNorm(x + Sublayer(x)). A small feed-forward network acts on each position separately (4→8→4 here, 512→2048→512 in the paper), followed by another Add & Norm. The paper stacks N = 6 such layers; the demo computes one.",
+    "A separate translation example: ‘The animal is tired.’ → ‘L’animal est fatigué.’ The decoder masks future positions (−∞ before softmax, exactly 0 after). In cross-attention the queries come from the decoder and the keys and values from the encoder output. The next-token probabilities are illustrative, not from a trained model. Generation is one token at a time: predict, append, feed back.",
+    "Explore: click any word (or ↑ / ↓) to make it the query; switch heads; turn positional encoding off; try a different divisor (a what-if experiment — the paper always uses √d_k). Every number is recomputed by the same engine.",
   ];
 
   const BEATS = [
@@ -2123,6 +3232,27 @@ body.idle #controls, body.idle #timeline { opacity: 0.12; }
     { scene: 6, id: "products", layout: L7_all, play: (run) => allProducts(run) },
     { scene: 6, id: "flow", layout: L7_flow, play: (run) => flowValues(run) },
     { scene: 6, id: "result", layout: L7_result, async play(run) { await applyLayout(L7_result(), { dur: 1300, run }); } },
+    // ---- Scene 8 — MULTI-HEAD ATTENTION
+    { scene: 7, id: "heads", layout: L8_heads, play: (run) => pullBack(run) },
+    { scene: 7, id: "head2", layout: L8_head2, play: (run) => secondHead(run) },
+    { scene: 7, id: "concat", layout: L8_concat, play: (run) => concatHeads(run) },
+    { scene: 7, id: "wo", layout: L8_wo, play: (run) => throughWO(run) },
+    // ---- Scene 9 — WHERE THE CALCULATION LIVES: one encoder layer
+    { scene: 8, id: "block", layout: L9_block, play: (run) => collapseIntoBlock(run) },
+    { scene: 8, id: "residual", layout: L9_residual, play: (run) => residualAdd(run) },
+    { scene: 8, id: "ffn", layout: L9_ffn, play: (run) => ffnBrief(run) },
+    { scene: 8, id: "stack", layout: L9_stack, play: (run) => stackLayers(run) },
+    // ---- Scene 10 — THE FULL TRANSFORMER (a separate translation example)
+    { scene: 9, id: "zoom", layout: L10_zoom, play: (run) => zoomOut(run) },
+    { scene: 9, id: "example", layout: L10_example, play: (run) => example(run) },
+    { scene: 9, id: "decoder", layout: L10_decoder, play: (run) => buildDecoder(run) },
+    { scene: 9, id: "mask", layout: L10_mask, play: (run) => maskOpen(run) },
+    { scene: 9, id: "cross", layout: L10_cross, play: (run) => crossOpen(run) },
+    { scene: 9, id: "output", layout: L10_output, play: (run) => outputProbs(run) },
+    { scene: 9, id: "loop", layout: L10_loop, play: (run) => loopBack(run) },
+    { scene: 9, id: "final", layout: L10_final, play: (run) => finalShot(run) },
+    // ---- EXPLORE — the same calculation, live
+    { scene: 10, id: "explore", layout: L_explore, play: (run) => enterExplore(run) },
   ];
 
   // ---------------------------------------------------------------------------- DIRECTOR (navigation)
@@ -2150,11 +3280,32 @@ body.idle #controls, body.idle #timeline { opacity: 0.12; }
       return run.done;
     },
     skip() { if (this.run) { this.run.skip = true; finishAll(); } },
+    // run a choreography on the current beat (Explore updates); it settles to the beat's layout
+    playFn(fn) {
+      this.gen++;
+      if (this.run) this.run.cleanup();
+      finishAll();
+      const run = new Run(this.gen), i = this.index;
+      this.run = run;
+      hud.update();
+      run.done = (async () => {
+        try { await fn(run); } finally {
+          if (!run.dead) { run.cleanup(); await applyLayout(layoutOf(i), { dur: 0 }); this.run = null; hud.update(); }
+        }
+      })();
+      return run.done;
+    },
     next() {
       if (clock.frozen) freeze(false);
       if (this.run) { this.skip(); return; }
       if (this.index < BEATS.length - 1) this.play(this.index + 1);
-      else toast("Scenes 8–10 are built in M4–M5.");
+      else toast("Explore: click any word, or use the controls above.");
+    },
+    explore() {
+      this.autoplay = false;
+      const i = BEATS.findIndex((b) => b.id === "explore");
+      if (this.index === i) return;
+      if (this.index === i - 1 && !this.run) this.play(i); else this.jump(i, 900);
     },
     prev() {
       if (clock.frozen) freeze(false);
@@ -2224,14 +3375,10 @@ body.idle #controls, body.idle #timeline { opacity: 0.12; }
         b.type = "button";
         b.textContent = s.label;
         b.dataset.scene = k;
-        if (s.todo) { b.classList.add("todo"); b.disabled = true; b.title = `Built in ${s.todo}`; }
-        else b.title = `${k + 1}. ${s.title}`;
+        b.title = k < GUIDED_SCENES ? `${k + 1}. ${s.title}` : `${s.title} (E)`;
         b.addEventListener("click", () => { director.autoplay = false; director.jump(BEATS.findIndex((x) => x.scene === k)); });
         nav.appendChild(b);
       });
-      const ex = document.createElement("button");
-      ex.type = "button"; ex.textContent = "Explore"; ex.disabled = true; ex.classList.add("todo"); ex.title = "Built in M4";
-      nav.appendChild(ex);
       this.built = true;
     },
     update() {
@@ -2239,7 +3386,12 @@ body.idle #controls, body.idle #timeline { opacity: 0.12; }
       const beat = BEATS[i];
       const sc = SCENES[beat.scene];
       const st = REG.get("status");
-      st.t.textContent = `${beat.scene + 1} / ${SCENES.length}  ·  ${sc.title}`;
+      st.t.textContent = beat.scene < GUIDED_SCENES ? `${beat.scene + 1} / ${GUIDED_SCENES}  ·  ${sc.title}` : sc.title;
+      const ex = beat.id === "explore";
+      $("explore-ui").hidden = !ex;
+      document.body.classList.toggle("exploring", ex);
+      $("btn-explore").setAttribute("aria-pressed", String(ex));
+      if (ex) syncExploreUI();
       document.querySelectorAll("#timeline button[data-scene]").forEach((b) => {
         const k = Number(b.dataset.scene);
         b.classList.toggle("current", k === beat.scene);
@@ -2269,7 +3421,7 @@ body.idle #controls, body.idle #timeline { opacity: 0.12; }
       const el = $("notes");
       el.hidden = !this.open;
       if (!this.open) return;
-      el.innerHTML = `<h2>Presenter notes · ${beat.scene + 1}. ${SCENES[beat.scene].title}</h2><p>${NOTES[beat.scene] ?? ""}</p><p style="color:var(--ink-faint)">beat ${director.index + 1}/${BEATS.length} · ${beat.id} · N to hide</p>`;
+      el.innerHTML = `<h2>Presenter notes · ${beat.scene < GUIDED_SCENES ? `${beat.scene + 1}. ` : ""}${SCENES[beat.scene].title}</h2><p>${NOTES[beat.scene] ?? ""}</p><p style="color:var(--ink-faint)">beat ${director.index + 1}/${BEATS.length} · ${beat.id} · N to hide</p>`;
     },
   };
   const debug = {
@@ -2313,7 +3465,7 @@ body.idle #controls, body.idle #timeline { opacity: 0.12; }
       <p>What we asked the coding assistant to build:</p><p class="edit">${DISCLOSURE.asked}</p>
       <p>What we manually checked or fixed:</p><p class="edit">${DISCLOSURE.checked}</p>
       <label><input type="checkbox" id="force-motion" ${ui.forceMotion ? "checked" : ""}> Animate even when the system asks for reduced motion${reduceMQ.matches ? " (reduced motion is on)" : ""}</label>
-      <dl><dt>→ / PgDn</dt><dd>next step (finishes a running animation first)</dd><dt>← / PgUp</dt><dd>previous step</dd><dt>Space</dt><dd>play / pause</dd><dt>C</dt><dd>show calculation (slower, 3 decimals)</dd><dt>R</dt><dd>restart</dd><dt>F</dt><dd>fullscreen</dd><dt>N</dt><dd>presenter notes</dd><dt>D</dt><dd>verification panel</dd><dt>M</dt><dd>positional-encoding formula (Scene 3)</dd></dl>
+      <dl><dt>→ / PgDn</dt><dd>next step (finishes a running animation first)</dd><dt>← / PgUp</dt><dd>previous step</dd><dt>Space</dt><dd>play / pause</dd><dt>C</dt><dd>show calculation (slower, 3 decimals)</dd><dt>R</dt><dd>restart</dd><dt>F</dt><dd>fullscreen</dd><dt>N</dt><dd>presenter notes</dd><dt>D</dt><dd>verification panel</dd><dt>M</dt><dd>positional-encoding formula (Scene 3)</dd><dt>E</dt><dd>Explore mode</dd><dt>↑ / ↓</dt><dd>in Explore: previous / next word as the query</dd></dl>
       <button type="button" id="about-close">Close</button>`;
     el.hidden = false;
     $("about-close").addEventListener("click", closeAbout);
@@ -2345,8 +3497,8 @@ body.idle #controls, body.idle #timeline { opacity: 0.12; }
     for (const el of document.querySelectorAll("#stage [data-alpha]")) {
       if (!shown(el)) continue;
       const a = val(el.dataset.alpha), kind = el.dataset.kind;
-      const want = kind === "bar" ? barLen(a) : alphaWidth(a);
-      const got = kind === "bar" ? parseFloat(el.getAttribute("width")) : parseFloat(el.style.strokeWidth);
+      const want = kind === "bar" ? barLen(a) : kind === "pbar" ? probLen(a) : kind === "xbar" ? exBarLen(a) : alphaWidth(a);
+      const got = kind === "wire" ? parseFloat(el.style.strokeWidth) : parseFloat(el.getAttribute("width"));
       geometry.checked++;
       if (!(Math.abs(got - want) < 0.05)) geometry.mismatches.push({ src: el.dataset.alpha, kind, got, want });
     }
@@ -2374,6 +3526,11 @@ body.idle #controls, body.idle #timeline { opacity: 0.12; }
     $("btn-full").addEventListener("click", toggleFullscreen);
     $("btn-about").addEventListener("click", about);
     $("pe-math-btn").addEventListener("click", () => setPeMath(!ui.peMath));
+    $("btn-explore").addEventListener("click", () => director.explore());
+    document.querySelectorAll("#explore-ui [data-head]").forEach((b) => b.addEventListener("click", () => { const h = Number(b.dataset.head); if (h !== EX.h) exploreDo("head", () => { EX.h = h; }); }));
+    document.querySelectorAll("#explore-ui [data-pos]").forEach((b) => b.addEventListener("click", () => { const on = b.dataset.pos === "1"; if (on !== EX.pos) exploreDo("pos", () => { EX.pos = on; }); }));
+    document.querySelectorAll("#explore-ui [data-scale]").forEach((b) => b.addEventListener("click", () => { const m = b.dataset.scale; if (m !== EX.scale) exploreDo("scale", () => { EX.scale = m; }); }));
+    $("ex-scale").addEventListener("input", (e) => { const v = 2 ** Number(e.target.value); exploreDo("slide", () => { EX.custom = v; }); });
     reduceMQ.addEventListener("change", updateMotion);
     document.addEventListener("keydown", (e) => {
       const tag = (e.target && e.target.tagName) || "";
@@ -2390,7 +3547,9 @@ body.idle #controls, body.idle #timeline { opacity: 0.12; }
         n: () => { notes.open = !notes.open; hud.update(); }, N: () => { notes.open = !notes.open; hud.update(); },
         d: () => { debug.open = !debug.open; debug.render(); }, D: () => { debug.open = !debug.open; debug.render(); },
         m: () => { if (!$("pe-math-btn").hidden) setPeMath(!ui.peMath); }, M: () => { if (!$("pe-math-btn").hidden) setPeMath(!ui.peMath); },
-        e: () => toast("Explore mode arrives in M4."), E: () => toast("Explore mode arrives in M4."),
+        e: () => director.explore(), E: () => director.explore(),
+        ArrowUp: () => { if (inExplore()) exploreSelect((EX.q + N - 1) % N); },
+        ArrowDown: () => { if (inExplore()) exploreSelect((EX.q + 1) % N); },
         Escape: () => { if (ui.peMath) setPeMath(false); },
       }[k];
       if (act) { e.preventDefault(); act(); }
@@ -2421,7 +3580,33 @@ body.idle #controls, body.idle #timeline { opacity: 0.12; }
     toggleCalc,
     speed: (k) => { clock.speed = k; },
     audit,
+    // every visible object's state, rounded: a beat must look identical whichever way it was reached
+    snapshot() {
+      const out = {}, n = (v) => Math.round(v * 2) / 2;
+      for (const [id, o] of REG) {
+        if (o.o < 0.01) continue;
+        const st = { x: n(o.x), y: n(o.y), s: Math.round(o.s * 1000) / 1000, o: Math.round(o.o * 100) / 100 };
+        if (o instanceof PathObj) { st.draw = Math.round(o.draw * 100) / 100; if (o.geoB) st.geo = o.geoB.map(n).join(","); if (o.sw !== undefined) st.sw = Math.round(o.sw * 100) / 100; }
+        if (o instanceof BoxObj) Object.assign(st, { w: n(o.w), h: n(o.h), glow: Math.round(o.glow * 100) / 100, lo: Math.round(o.lo * 100) / 100, ts: Math.round(o.ts * 1000) / 1000, cls: o.cls });
+        const src = (v) => v && v.replace(/^ex\d+\./, "ex#."); // Explore's data versions are an implementation detail
+        if (o instanceof VectorObj) Object.assign(st, { src: src(o.src), d: o.d, orient: o.orient, bw: n(o.bw), pl: Math.round(o.pl * 100) / 100 });
+        if (o instanceof NumObj) Object.assign(st, { src: src(o.src), d: o.d });
+        if (o instanceof BarObj) st.w = n(o.w);
+        if (o instanceof TokenObj) st.pill = Math.round(o.pill * 100) / 100;
+        if (o instanceof TextObj) st.text = o.t.textContent;
+        out[id] = st;
+      }
+      return out;
+    },
     get showCalc() { return ui.showCalc; },
+    explore: {
+      enter: () => director.explore(),
+      select: (j) => exploreSelect(j),
+      head: (h) => { if (h !== EX.h) exploreDo("head", () => { EX.h = h; }); },
+      pos: (on) => { if (on !== EX.pos) exploreDo("pos", () => { EX.pos = on; }); },
+      scale: (mode, v) => exploreDo(mode === "custom" ? "slide" : "scale", () => { EX.scale = mode; if (v !== undefined) EX.custom = v; }),
+      get state() { return { q: EX.q, h: EX.h, pos: EX.pos, scale: EX.scale, divisor: exScaleValue() }; },
+    },
     ready: false,
   };
 
