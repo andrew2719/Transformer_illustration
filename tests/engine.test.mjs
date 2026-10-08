@@ -222,3 +222,69 @@ test("off-path rounding is flagged with ≈ instead of being hidden", () => {
   assert.equal(E.productSign(1.25, 2, 0.1, 1, 0.125, 2), "≈");
   assert.equal(E.productSign(1.26, 2, 0.1, 1, 0.126, 2), "=");
 });
+
+// ---------------------------------------------------------------- epilogue: the same operations at paper scale
+// Arrays created inside the VM context have that context's Array.prototype, so every deepEqual below
+// compares spread copies.
+const PAPER = E.paperScale(tokens);
+const same = (a, b, msg) => assert.deepEqual([...a], [...b], msg);
+const plainRowTimes = (v, W) => [...W[0]].map((_, c) => { let s = 0; for (let r = 0; r < v.length; r++) s += v[r] * W[r][c]; return s; });
+
+test("paper scale uses the base model's sizes (§3.2.2): d_model 512, h 8, d_k = d_v = d_model/h = 64", () => {
+  const { dModel, nHeads, dK, dV } = E.CONFIG.paper, n = tokens.length;
+  assert.deepEqual([dModel, nHeads, dK, dV], [512, 8, 64, 64]);
+  assert.equal(dK, dModel / nHeads);
+  assert.equal(dV, dModel / nHeads);
+  const shape = (M, r, c, what) => { assert.equal(M.length, r, `${what}: rows`); M.forEach((row) => assert.equal(row.length, c, `${what}: cols`)); };
+  for (const [M, what] of [[PAPER.E, "E"], [PAPER.P, "PE"], [PAPER.X, "X"], [PAPER.Concat, "Concat"], [PAPER.MH, "MultiHead"]]) shape(M, n, dModel, what);
+  assert.equal(PAPER.heads.length, nHeads);
+  for (const H of PAPER.heads) { shape(H.Q, n, dK, "Q"); shape(H.K, n, dK, "K"); shape(H.V, n, dV, "V"); shape(H.A, n, n, "A"); shape(H.Z, n, dV, "head output"); }
+  for (let h = 0; h < nHeads; h++) { const W = E.paperHeadWeights(h); shape(W.WQ, dModel, dK, "W_Q"); shape(W.WK, dModel, dK, "W_K"); shape(W.WV, dModel, dV, "W_V"); }
+  shape(E.paperWO(), nHeads * dV, dModel, "W^O (h·d_v × d_model)");
+});
+
+test("paper scale: positional encoding is the paper's formula at d_model = 512, and X = E + PE", () => {
+  const d = E.CONFIG.paper.dModel;
+  PAPER.P.forEach((pe, pos) => {
+    same(pe, E.positionalEncoding(pos, d));
+    for (const i of [0, 1, 7, 100, 255]) {
+      const angle = pos / Math.pow(10000, (2 * i) / d);
+      assert.ok(Math.abs(pe[2 * i] - Math.sin(angle)) < 1e-15 && Math.abs(pe[2 * i + 1] - Math.cos(angle)) < 1e-15, `PE(${pos}, ${2 * i})`);
+    }
+  });
+  PAPER.X.forEach((x, i) => x.forEach((v, c) => assert.equal(v, PAPER.E[i][c] + PAPER.P[i][c])));
+});
+
+test("paper scale: each head has its own W_Q, W_K, W_V; Q = X·W_Q …; softmax(QKᵀ/√64)V; Concat·W^O", () => {
+  const { nHeads, dK } = E.CONFIG.paper, n = tokens.length;
+  assert.notDeepEqual([...E.paperHeadWeights(0).WQ[0]], [...E.paperHeadWeights(1).WQ[0]]);
+  PAPER.heads.forEach((H, h) => {
+    const W = E.paperHeadWeights(h);
+    for (const [M, w] of [[H.Q, W.WQ], [H.K, W.WK], [H.V, W.WV]]) M.forEach((row, i) => same(row, plainRowTimes(PAPER.X[i], w), `head ${h + 1}, row ${i}`));
+    H.A.forEach((row, i) => {
+      assert.ok(Math.abs(row.reduce((a, b) => a + b, 0) - 1) < 1e-14, "softmax rows sum to 1");
+      same(row, E.softmax(H.K.map((k) => E.dot(H.Q[i], k) / Math.sqrt(dK))), "scaled by √d_k = 8");
+      H.Z[i].forEach((z, c) => { let s = 0; for (let j = 0; j < n; j++) s += row[j] * H.V[j][c]; assert.ok(Math.abs(z - s) < 1e-14); });
+    });
+  });
+  const WO = E.paperWO();
+  PAPER.Concat.forEach((c, i) => same(c, PAPER.heads.flatMap((H) => [...H.Z[i]]), "Concat(head_1, …, head_8)"));
+  PAPER.MH.forEach((m, i) => same(m, plainRowTimes(PAPER.Concat[i], WO), "MultiHead = Concat·W^O"));
+  assert.equal(PAPER.Concat[0].length, nHeads * E.CONFIG.paper.dV);
+});
+
+test("paper scale values are deterministic, readable, illustrative — and not the toy vectors", () => {
+  assert.equal(JSON.stringify(E.paperScale(tokens)), JSON.stringify(PAPER));
+  same(E.paperScale(["The"]).E[0], E.paperScale(["the"]).E[0], "case-insensitive, like the toy table");
+  const all = (M) => M.flat();
+  assert.ok(all(PAPER.X).every((v) => Math.abs(v) < 2.5), "X stays readable");
+  for (const H of PAPER.heads) {
+    assert.ok(all(H.Q).every((v) => Math.abs(v) < 6) && all(H.K).every((v) => Math.abs(v) < 6), "Q, K stay readable");
+    assert.ok(Math.max(...all(H.A)) < 0.99, "softmax is not saturated");
+  }
+  // the 4-d toy x_it is not the first four entries of the illustrative 512-d one
+  const toy = model().X[FOCUS];
+  assert.ok(toy.some((v, d) => Math.abs(v - PAPER.X[FOCUS][d]) > 0.05));
+  // the locked toy model is untouched by the epilogue
+  assert.deepEqual(JSON.parse(JSON.stringify(E.PARAMS)), fixture.params);
+});

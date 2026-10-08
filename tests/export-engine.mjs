@@ -22,8 +22,12 @@ for (const [k, positionOn, scale] of [["on", true, Math.SQRT2], ["off", false, M
 const D = E.PARAMS.decoder;
 const grid = (toks) => { const g = E.maskedDecoderGrid(toks); return { masked: g.masked.map((r) => r.map((x) => (x === -Infinity ? null : x))), A: g.A }; };
 const nt = E.nextTokenDistribution();
+// epilogue: the paper-scale arrays (illustrative seeded values); the reference regenerates the weights itself
+const P = E.paperScale(tokens);
+const paper = { seed: E.PAPER_SEED, dims: E.CONFIG.paper, X: P.X, heads: P.heads.map((H) => ({ Q: H.Q, K: H.K, V: H.V, A: H.A, Z: H.Z })), Concat: P.Concat, MH: P.MH };
 writeFileSync(new URL("tests/fixtures/engine-export.json", root), JSON.stringify({
   sentence: E.GUIDED.sentence, tokens, params: E.PARAMS, conds,
   decoder: { g4: grid(D.inputs), g5: grid([...D.inputs, D.next]), vocab: nt.vocab, nextP: nt.probs },
+  paper,
 }));
 console.log("wrote tests/fixtures/engine-export.json");

@@ -130,6 +130,13 @@ body.idle { cursor: none; }
 .note-text { font-family: var(--font-sans); fill: var(--ink-dim); letter-spacing: 0.02em; font-style: italic; }
 .m-neutral .col-hl { stroke: rgba(207, 217, 235, 0.55); }
 
+/* ---- paper-scale epilogue: compressed vectors and heat blocks ---- */
+.heat { image-rendering: pixelated; }
+.heat-glow { filter: url(#strip-glow); }
+.heat-bglow { filter: url(#block-glow); }
+.cmat .cm-ix { font-family: var(--font-sans); fill: var(--ink-faint); letter-spacing: 0.04em; }
+.seg-div { stroke: rgba(4, 6, 11, 0.92); stroke-width: 2; }
+
 /* ---- HTML chrome (sized in viewBox units via --u) ---- */
 #controls { position: absolute; left: 50%; bottom: calc(30 * var(--u)); transform: translateX(-50%); display: flex; align-items: center; gap: calc(10 * var(--u)); transition: opacity 0.5s; }
 #controls button { width: max(30px, calc(44 * var(--u))); height: max(30px, calc(44 * var(--u))); border-radius: 999px; border: 1px solid rgba(207, 217, 235, 0.16); background: rgba(8, 13, 25, 0.45); color: var(--ink-dim); display: grid; place-items: center; cursor: pointer; padding: 0; font: inherit; font-size: max(12px, calc(17 * var(--u))); line-height: 1; }
@@ -213,6 +220,8 @@ body.exploring .ex-hit:hover { fill: rgba(207, 217, 235, 0.05); }
         <radialGradient id="g-k"><stop offset="0" stop-color="#f6a940" stop-opacity="0.6"/><stop offset="1" stop-color="#f6a940" stop-opacity="0"/></radialGradient>
         <radialGradient id="g-v"><stop offset="0" stop-color="#55d8a0" stop-opacity="0.6"/><stop offset="1" stop-color="#55d8a0" stop-opacity="0"/></radialGradient>
         <filter id="soft" x="-20%" y="-60%" width="140%" height="220%"><feGaussianBlur stdDeviation="5"/></filter>
+        <filter id="strip-glow" x="-6%" y="-260%" width="112%" height="620%"><feGaussianBlur stdDeviation="7"/></filter>
+        <filter id="block-glow" x="-70%" y="-70%" width="240%" height="240%"><feGaussianBlur stdDeviation="9"/></filter>
         <marker id="arr" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto"><path d="M 0 1.2 L 9 5 L 0 8.8 z" fill="#9fb3d6"/></marker>
         <marker id="arr-q" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto"><path d="M 0 1.2 L 9 5 L 0 8.8 z" fill="#4cc9f5"/></marker>
         <marker id="arr-k" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto"><path d="M 0 1.2 L 9 5 L 0 8.8 z" fill="#f6a940"/></marker>
@@ -545,6 +554,64 @@ body.exploring .ex-hit:hover { fill: rgba(207, 217, 235, 0.05); }
     return { vocab, logits, ...softmaxTrace(logits) };
   }
 
+  // ---------------------------------------------------------------------------- PAPER-SCALE ILLUSTRATION (epilogue)
+  // The same operations at the base model's sizes (§3.2.2): d_model = 512, h = 8, d_k = d_v = d_model/h = 64,
+  // W_i^Q, W_i^K ∈ R^{d_model×d_k}, W_i^V ∈ R^{d_model×d_v}, W^O ∈ R^{h·d_v × d_model}.
+  // ILLUSTRATIVE ONLY: the embeddings and every projection matrix are seeded pseudo-random numbers
+  // (deterministic, so a refresh reproduces them) — NOT trained weights, and NOT an extension of the toy
+  // 4-d vectors. Only the positional encoding is the paper's real formula (§3.5), here at d_model = 512.
+  // The page shows these arrays compressed, [a, b, c, …, z]; every entry it shows is a real entry of them.
+  const PAPER_SEED = "vaswani2017-base:illustrative";
+  function paperUniform(tag, n, amp) {
+    const rnd = mulberry32(fnv1a(`${PAPER_SEED}:${tag}`));
+    const out = new Array(n);
+    for (let i = 0; i < n; i++) out[i] = (2 * rnd() - 1) * amp;
+    return out;
+  }
+  function paperMatrix(tag, rows, cols, amp) {
+    const flat = paperUniform(tag, rows * cols, amp);
+    return Array.from({ length: rows }, (_, r) => flat.slice(r * cols, (r + 1) * cols));
+  }
+  // uniform on [−a, a] with a = √(3/fan_in): variance 1/fan_in, a standard initialisation scale, so projected
+  // values stay readable (about ±1)
+  const paperAmp = (fanIn) => Math.sqrt(3 / fanIn);
+  function paperHeadWeights(h) {
+    const { dModel, dK, dV } = CONFIG.paper, a = paperAmp(dModel);
+    return { WQ: paperMatrix(`WQ${h}`, dModel, dK, a), WK: paperMatrix(`WK${h}`, dModel, dK, a), WV: paperMatrix(`WV${h}`, dModel, dV, a) };
+  }
+  function paperWO() {
+    const { dModel, nHeads, dV } = CONFIG.paper;
+    return paperMatrix("WO", nHeads * dV, dModel, paperAmp(nHeads * dV));
+  }
+  // Row-vector products without the per-term traces matVecTrace keeps (at 512 dimensions those would be
+  // millions of numbers). Each entry is the same left-to-right sum.
+  function matMulPlain(A, B) {
+    const cols = B[0].length;
+    return A.map((a) => {
+      if (a.length !== B.length) throw new Error(`matMulPlain: vector ${a.length} vs matrix rows ${B.length}`);
+      const out = new Array(cols).fill(0);
+      for (let r = 0; r < a.length; r++) { const ar = a[r], br = B[r]; for (let c = 0; c < cols; c++) out[c] += ar * br[c]; }
+      return out;
+    });
+  }
+  // X = E + PE → per head Q, K, V = X·W (512 → 64) → softmax(QKᵀ/√64)V → Concat (8 · 64 = 512) → ·W^O
+  function paperScale(tokens) {
+    const { dModel, nHeads, dK } = CONFIG.paper;
+    const E = tokens.map((t) => paperUniform(`E:${t.toLowerCase()}`, dModel, 1)); // case-insensitive, like the toy table
+    const P = tokens.map((_, pos) => positionalEncoding(pos, dModel));
+    const X = E.map((e, i) => vectorAdd(e, P[i]));
+    const heads = [];
+    for (let h = 0; h < nHeads; h++) {
+      const W = paperHeadWeights(h);
+      const Q = matMulPlain(X, W.WQ), K = matMulPlain(X, W.WK), V = matMulPlain(X, W.WV);
+      const att = scaledDotProductAttention(Q, K, V, dK); // the same function the toy heads use
+      heads.push({ Q, K, V, A: att.A, Z: att.Z });
+    }
+    const Concat = X.map((_, i) => concat(...heads.map((hd) => hd.Z[i])));
+    const MH = matMulPlain(Concat, paperWO());
+    return { tokens, E, P, X, heads, Concat, MH };
+  }
+
   // ---------------------------------------------------------------------------- DISPLAY HELPERS
   // One rounding rule everywhere (half away from zero) so displayed digits and checks agree.
   function roundUnits(x, p) { return Math.sign(x) * Math.round(Math.abs(x) * 10 ** p); }
@@ -579,6 +646,7 @@ body.exploring .ex-hit:hover { fill: rgba(207, 217, 235, 0.05); }
     softmax, softmaxTrace, layerNorm, layerNormTrace, positionalEncoding,
     scaledDotProductAttention, computeModel, maskedDecoderGrid, nextTokenDistribution,
     tokenize, embeddingFor, roundUnits, fmt, relationSign, productSign,
+    PAPER_SEED, paperScale, paperHeadWeights, paperWO, matMulPlain,
   });
 })(globalThis);
 </script>
@@ -609,7 +677,10 @@ body.exploring .ex-hit:hover { fill: rgba(207, 217, 235, 0.05); }
     g4: E.maskedDecoderGrid(E.PARAMS.decoder.inputs),
     next: E.nextTokenDistribution(),
   };
-  const SRC = { ...MODEL, params: E.PARAMS, dec: DEC, derived: { alphaSum: MODEL.heads[0].A[FOCUS].reduce((a, b) => a + b, 0) } };
+  // Epilogue: the same operations at the paper's sizes, with seeded ILLUSTRATIVE values (engine: paperScale)
+  const PD = E.CONFIG.paper;
+  const PAPER = E.paperScale(TOKENS);
+  const SRC = { ...MODEL, params: E.PARAMS, dec: DEC, paper: PAPER, derived: { alphaSum: MODEL.heads[0].A[FOCUS].reduce((a, b) => a + b, 0) } };
   const val = (path) => path.split(".").reduce((o, k) => (o == null ? undefined : o[k]), SRC);
 
   // ---------------------------------------------------------------------------- UI STATE
@@ -1220,6 +1291,200 @@ body.exploring .ex-hit:hover { fill: rgba(207, 217, 235, 0.05); }
     }
   }
 
+  // ---- Epilogue (paper scale): compressed vectors and matrices.
+  // A 512- or 64-number vector is drawn as [a b c ▒▒▒▒ z]: its first entries and its last as bound numbers, and
+  // between them a strip with one pixel column per elided entry. The strip's brightness rises with the value
+  // (−v_max dim … +v_max bright) in the colour of what the vector is; strips are drawn from the same engine
+  // arrays as the numbers.
+  const TONE = {
+    n: { rgb: [207, 217, 235], v: "v-neutral", m: "m-neutral", hl: "hl-n" }, x: { rgb: [214, 220, 246], v: "v-x", m: "m-neutral", hl: "hl-n" },
+    q: { rgb: [76, 201, 245], v: "v-q", m: "m-q", hl: "hl-q" }, k: { rgb: [246, 169, 64], v: "v-k", m: "m-k", hl: "hl-k" }, v: { rgb: [85, 216, 160], v: "v-v", m: "m-v", hl: "hl-v" },
+  };
+  const HEAT = new Map();
+  // colour scale ≈ 2.2 × RMS, so a strip shows the spread of its values rather than one outlier
+  function heatScale(...Ms) {
+    let s = 0, n = 0;
+    for (const M of Ms) for (const row of M) for (const v of row) { s += v * v; n++; }
+    return 2.2 * Math.sqrt(s / Math.max(1, n)) || 1;
+  }
+  function heatURL(key, M, tone, vmax) {
+    if (HEAT.has(key)) return HEAT.get(key);
+    const rows = M.length, cols = M[0].length, cv = document.createElement("canvas");
+    cv.width = cols; cv.height = rows;
+    const ctx = cv.getContext("2d"), img = ctx.createImageData(cols, rows), [R, G, B] = TONE[tone].rgb;
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      const t = Math.max(0, Math.min(1, (M[r][c] / vmax + 1) / 2)), i = 4 * (r * cols + c);
+      img.data[i] = R; img.data[i + 1] = G; img.data[i + 2] = B; img.data[i + 3] = Math.round(255 * (0.07 + 0.93 * t * t));
+    }
+    ctx.putImageData(img, 0, 0);
+    const url = cv.toDataURL("image/png");
+    HEAT.set(key, url);
+    return url;
+  }
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const setBox = (el, x, y, w, h) => { el.setAttribute("x", r2(x)); el.setAttribute("y", r2(y)); el.setAttribute("width", r2(Math.max(0, w))); el.setAttribute("height", r2(Math.max(0, h))); };
+  const bracketD = (w, top, bot, lip = 9) => [`M ${r2(-w + lip)} ${r2(top)} H ${r2(-w)} V ${r2(bot)} H ${r2(-w + lip)}`, `M ${r2(w - lip)} ${r2(top)} H ${r2(w)} V ${r2(bot)} H ${r2(w - lip)}`];
+  let clipSeq = 0;
+
+  // Compressed matrix (or a single row): [a b c ▒▒▒ z] per row, every number bound to the engine.
+  //  c  = 1 folds it into a compact heat block (the strip swallows the numbers)
+  //  so = 1 shows only the `solo` row, brackets around that row alone
+  class CMatObj extends Node2D {
+    layoutDefaults() { return { s: 1, c: 0, so: 0, nu: 1, ix: 0, hla: 0, draw: 1, glow: 0 }; }
+    constructor(id, layer, { M, rowSrc, lead, tone = "x", size = 28, rowH = 54, mid = 820, cw = 384, crowH = 16, solo = 0, hlRow = -1, vmax = null }) {
+      super(id, layer, `cmat vec ${TONE[tone].v}`);
+      const rows = M.length, dim = M[0].length;
+      Object.assign(this, { rows, dim, lead, size, rowH, mid, cw, crowH, solo, hlRow, c: 0, so: 0, nu: 1, ix: 0, hla: 0, draw: 1, glow: 0 });
+      const cid = `clip-cm${++clipSeq}`;
+      this.clipR = svg("rect", {}, svg("clipPath", { id: cid }, this.el));
+      this.hlR = svg("rect", { class: `cell-hl ${TONE[tone].hl}`, rx: 8 }, this.el);
+      const strips = svg("g", { "clip-path": `url(#${cid})` }, this.el);
+      const vm = vmax ?? heatScale(M);
+      this.rowEls = M.map((row, r) => {
+        const src = rowSrc(r);
+        const mUrl = heatURL(`${src}|mid${lead}`, [row.slice(lead, dim - 1)], tone, vm), fUrl = heatURL(`${src}|all`, [row], tone, vm);
+        const el = { glow: svg("image", { href: mUrl, preserveAspectRatio: "none", class: "heat heat-glow" }, strips) };
+        el.mid = svg("image", { href: mUrl, preserveAspectRatio: "none", class: "heat" }, strips);
+        el.full = svg("image", { href: fUrl, preserveAspectRatio: "none", class: "heat" }, strips);
+        el.nums = Array.from({ length: lead + 1 }, (_, k) => {
+          const t = svg("text", { class: "num", "text-anchor": "middle", "dominant-baseline": "central", "font-size": size }, this.el);
+          bindNum(t, `${src}.${k < lead ? k : dim - 1}`, 2);
+          return t;
+        });
+        return el;
+      });
+      [this.brL, this.brR] = [0, 1].map(() => svg("path", { class: "bracket" }, this.el));
+      // feature indices above the columns: 1 2 3 ⋯ 512 (derived from the array's own length)
+      this.ixEls = Array.from({ length: lead + 2 }, (_, k) => {
+        const t = svg("text", { class: "cm-ix", "text-anchor": "middle", "font-size": Math.round(size * 0.6) }, this.el);
+        t.textContent = k < lead ? String(k + 1) : k === lead ? "⋯" : String(dim);
+        return t;
+      });
+      this.nw = numW(size, 2);
+      this.apply();
+    }
+    relayout() { this.nw = numW(this.size, 2); this.apply(); }
+    // notation-mode width (c = 0): layouts use it to place labels just outside the brackets
+    notation() {
+      const { lead, size, nw } = this, g = 0.5 * size, sg = 0.42 * size;
+      const Wn = lead * nw + Math.max(0, lead - 1) * g + 2 * sg + this.mid + nw;
+      return { g, sg, Wn, hw: Wn / 2 + 0.36 * size };
+    }
+    halfW() { return this.notation().hw; }
+    rowOff(r) { return (r - (this.rows - 1) / 2) * this.rowH; }
+    geo() {
+      const { lead, dim, size, nw, c } = this, { g, sg, Wn, hw } = this.notation();
+      const xl = -Wn / 2, xs0 = xl + lead * nw + Math.max(0, lead - 1) * g + sg, xs1 = xs0 + this.mid;
+      const cl = -this.cw / 2, colX = (k) => cl + ((k + 0.5) / dim) * this.cw;
+      const rh = lerp(this.rowH, this.crowH, c), rowY = (r) => (r - (this.rows - 1) / 2) * rh;
+      const yS = rowY(this.solo), hS = size * 0.82;
+      return {
+        rh, rowY, sh: lerp(0.68 * size, this.crowH, c), hw: lerp(hw, this.cw / 2 + 7, c),
+        leadX: (k) => lerp(xl + k * (nw + g) + nw / 2, colX(k), c), lastX: lerp(xs1 + sg + nw / 2, colX(dim - 1), c),
+        mid0: lerp(xs0, cl + (lead / dim) * this.cw, c), mid1: lerp(xs1, cl + ((dim - 1) / dim) * this.cw, c),
+        full0: lerp(xl, cl, c), full1: lerp(-xl, -cl, c),
+        top: lerp(rowY(0) - rh / 2 - 2, yS - hS, this.so), bot: lerp(rowY(this.rows - 1) + rh / 2 + 2, yS + hS, this.so),
+        ixX: (k) => lerp(k < lead ? xl + k * (nw + g) + nw / 2 : k === lead ? (xs0 + xs1) / 2 : xs1 + sg + nw / 2,
+          k < lead ? colX(k) : k === lead ? cl + ((lead + dim - 1) / 2 / dim) * this.cw : colX(dim - 1), c),
+      };
+    }
+    rowO(r) { return r === this.solo ? 1 : 1 - this.so; }
+    apply() {
+      super.apply();
+      if (!this.rowEls) return;
+      const G = this.geo(), c = this.c;
+      this.rowEls.forEach((el, r) => {
+        // numbers fade out early in a fold, so shrinking digits never pile up on one another
+        const y = G.rowY(r), ro = this.rowO(r), go = ro * (1 - c) * this.glow, no = ro * Math.max(0, 1 - 2.5 * c) * this.nu;
+        setBox(el.mid, G.mid0, y - G.sh / 2, G.mid1 - G.mid0, G.sh);
+        setBox(el.glow, G.mid0, y - G.sh / 2, G.mid1 - G.mid0, G.sh);
+        setBox(el.full, G.full0, y - G.sh / 2, G.full1 - G.full0, G.sh);
+        el.mid.style.opacity = (ro * (1 - c)).toFixed(3);
+        el.full.style.opacity = (ro * c).toFixed(3);
+        el.glow.style.opacity = go.toFixed(3);
+        el.glow.style.visibility = go < 0.003 ? "hidden" : "visible";
+        el.nums.forEach((t, k) => { t.setAttribute("x", r2(k < this.lead ? G.leadX(k) : G.lastX)); t.setAttribute("y", r2(y)); t.style.opacity = no.toFixed(3); });
+      });
+      // the strip is revealed from the left (draw 0 → 1)
+      const s0 = Math.min(G.mid0, G.full0), s1 = Math.max(G.mid1, G.full1);
+      setBox(this.clipR, s0 - 2, G.top - 40, (s1 - s0 + 4) * Math.max(0, Math.min(1, this.draw)), G.bot - G.top + 80);
+      const hr = this.hlRow;
+      if (hr >= 0) setBox(this.hlR, -G.hw + 5, G.rowY(hr) - G.rh * 0.46, 2 * G.hw - 10, G.rh * 0.92);
+      this.hlR.style.opacity = (hr >= 0 ? this.hla * this.rowO(hr) : 0).toFixed(3);
+      const [dl, dr] = bracketD(G.hw, G.top, G.bot);
+      this.brL.setAttribute("d", dl); this.brR.setAttribute("d", dr);
+      // the header also dips out while the rows open up (so 1 → 0), so it never slides across a row of numbers
+      const io = this.ix * Math.max(0, 1 - 3 * c) * (1 - 4 * this.so * (1 - this.so));
+      this.ixEls.forEach((t, k) => { t.setAttribute("x", r2(G.ixX(k))); t.setAttribute("y", r2(G.top - 11)); t.style.opacity = io.toFixed(3); });
+    }
+    // stage position of row r's centre (transitions that start from one row)
+    rowAbs(r) { return { x: this.x, y: this.y + this.geo().rowY(r) * this.s }; }
+    morphExtra(t, { dur, delay, appearing, ps }) {
+      const goal = {};
+      for (const k of ["c", "so", "nu", "ix", "hla", "draw", "glow"]) if (t[k] !== undefined && t[k] !== this[k]) goal[k] = t[k];
+      if (!Object.keys(goal).length) return;
+      if (appearing || !dur) { Object.assign(this, goal); this.apply(); } else ps.push(tween(this, goal, { dur, delay }));
+    }
+  }
+
+  // A whole matrix as one heat block, one pixel per entry (W_Q, W^O, Q, K, V, head outputs, Concat, …).
+  class BlockObj extends Node2D {
+    layoutDefaults() { return { s: 1, glow: 0, hla: 0, draw: 1 }; }
+    constructor(id, layer, { url, tone = "n", w = 48, h = 120, rows = 8, segments = 0, hlRow = -1 }) {
+      super(id, layer, `cblock mat ${TONE[tone].m}`);
+      Object.assign(this, { url, tone, w, h, rows, segments, hlRow, glow: 0, hla: 0, draw: 1 });
+      const cid = `clip-cb${++clipSeq}`;
+      this.clipR = svg("rect", {}, svg("clipPath", { id: cid }, this.el));
+      this.glowI = svg("image", { href: url, preserveAspectRatio: "none", class: "heat heat-bglow" }, this.el);
+      const g = svg("g", { "clip-path": `url(#${cid})` }, this.el);
+      this.img = svg("image", { href: url, preserveAspectRatio: "none", class: "heat" }, g);
+      this.divs = Array.from({ length: Math.max(0, segments - 1) }, () => svg("line", { class: "seg-div" }, g));
+      this.hlR = svg("rect", { class: `cell-hl ${TONE[tone].hl}`, rx: 4 }, this.el);
+      [this.brL, this.brR] = [0, 1].map(() => svg("path", { class: "bracket" }, this.el));
+      this.apply();
+    }
+    apply() {
+      super.apply();
+      if (!this.img) return;
+      const w = Math.max(0, this.w), h = Math.max(0, this.h), dr = Math.max(0, Math.min(1, this.draw)), go = this.glow * dr;
+      setBox(this.img, -w / 2, -h / 2, w, h);
+      setBox(this.glowI, -w / 2, -h / 2, w, h);
+      this.glowI.style.opacity = go.toFixed(3);
+      this.glowI.style.visibility = go < 0.003 ? "hidden" : "visible";
+      setBox(this.clipR, -w / 2 - 2, -h / 2 - 2, (w + 4) * dr, h + 4);
+      this.divs.forEach((ln, k) => {
+        const x = -w / 2 + ((k + 1) * w) / this.segments;
+        ln.setAttribute("x1", r2(x)); ln.setAttribute("x2", r2(x)); ln.setAttribute("y1", r2(-h / 2)); ln.setAttribute("y2", r2(h / 2));
+      });
+      if (this.hlRow >= 0) { const rh = h / this.rows; setBox(this.hlR, -w / 2 - 5, -h / 2 + this.hlRow * rh - 3, w + 10, rh + 6); }
+      this.hlR.style.opacity = (this.hlRow >= 0 ? this.hla : 0).toFixed(3);
+      const [bl, br] = bracketD(w / 2 + 7, -h / 2 - 4, h / 2 + 4, Math.min(9, 0.25 * w + 4));
+      this.brL.setAttribute("d", bl); this.brR.setAttribute("d", br);
+    }
+    morphExtra(t, { dur, delay, appearing, ps }) {
+      const goal = {};
+      for (const k of ["w", "h", "glow", "hla", "draw"]) if (t[k] !== undefined && t[k] !== this[k]) goal[k] = t[k];
+      if (!Object.keys(goal).length) return;
+      if (appearing || !dur) { Object.assign(this, goal); this.apply(); } else ps.push(tween(this, goal, { dur, delay }));
+    }
+  }
+
+  // Two brackets on their own: the toy vector's brackets stretching out to paper size (a transient).
+  class BracketPair extends Node2D {
+    constructor(layer, cls) {
+      super(null, layer, `vec ${cls}`);
+      this.hw = 10; this.hh = 10;
+      [this.brL, this.brR] = [0, 1].map(() => svg("path", { class: "bracket" }, this.el));
+      this.apply();
+    }
+    apply() {
+      super.apply();
+      if (!this.brL) return;
+      const [dl, dr] = bracketD(this.hw, -this.hh, this.hh);
+      this.brL.setAttribute("d", dl); this.brR.setAttribute("d", dr);
+    }
+  }
+
   // ---------------------------------------------------------------------------- LAYOUT CONSTANTS
   const Y = { tok: 190, node: 232, vec: 352, pe: 576, lane0: 752, laneGap: 58, amp: 20, row: 520, mat: 712, res: 848, eqn: 896, intu: 944, cap: 128 };
   const BX = { q: 360, k: 960, v: 1560 };
@@ -1339,6 +1604,15 @@ body.exploring .ex-hit:hover { fill: rgba(207, 217, 235, 0.05); }
     v: { W: "WV", T: "vT", M: "V", label: "V", color: "v", intu: "What information can I contribute?" },
   };
 
+  // Epilogue (paper scale): positions. Sizes come from E.CONFIG.paper and values from PAPER; PS.k is the drawn
+  // width of one dimension, so a 512-wide block is exactly 8× a 64-wide one.
+  const PS = {
+    k: 0.75, mid: 820, toyY: 300, vecY: 560, noteDy: 78, cmpY: [752, 800], matX: 990, matY: 560, rowS: 0.56,
+    c: { xX: 560, xY: 540, wX: 1025, wW: 40, wH: 120, oX: 1340, ys: { q: 310, k: 540, v: 770 }, exY: 906 },
+    d: { tagX: 72, cols: { q: 290, k: 368, v: 446 }, zX: 640, y0: 250, gap: 80, bh: 44, catX: 1290, catY: 400, catH: 96, woY: 598, woS: 104, mhY: 796 },
+    u: { encX: 470, t1: 300, d1: 344, rx: 1466, t2: 590, d2: 632, t3: 728, d3: 770, l1: 846, l2: 878, fin: 116 },
+  };
+
   // ---------------------------------------------------------------------------- BUILD THE STAGE
   const CAPTIONS = {
     pairs: "Self-attention lets every position directly inspect every other position.",
@@ -1363,6 +1637,11 @@ body.exploring .ex-hit:hover { fill: rgba(207, 217, 235, 0.05); }
     cross: "Q from the decoder · K and V from the encoder",
     loop: "predict → append → feed back → predict again",
     final: "Everything we just calculated lives here.",
+    pvector: "Same computation — larger vectors.",
+    pmatrix: "The whole sentence is one matrix.",
+    pqkv: `One head projects ${PD.dModel} dimensions down to ${PD.dK}.`,
+    pheads: `${PD.nHeads} heads in parallel, concatenated back to ${PD.nHeads * PD.dV}.`,
+    puses: "The same attention mechanism appears throughout the architecture.",
     explore: "Click any word to make it the query.",
     nopos: "Without positional information, the mechanism no longer receives explicit token-order information.",
   };
@@ -1582,6 +1861,76 @@ body.exploring .ex-hit:hover { fill: rgba(207, 217, 235, 0.05); }
     new BoxObj("fin:box", LAYER.under, { cls: "callout", rx: 18 });
     for (const k of ["fin:l", "fin:r"]) new PathObj(k, LAYER.back, { geo: polyGeo([[0, 0], [0, 1]]), cls: "lead" });
     new PathObj("loop:path", LAYER.back, { geo: polyGeo([[0, 0], [1, 0], [1, 1], [0, 1]]), cls: "wire s-n", glowCls: "wire-glow attn-glow", arrow: "arr" });
+    // Epilogue (paper scale): the same operations at d_model = 512, 8 heads, d_k = d_v = 64. Sizes from
+    // E.CONFIG.paper; every number and strip from the engine's seeded, illustrative paperScale arrays.
+    new TextObj("tag:paper", LAYER.hud, { text: "Paper scale — illustrative values, not trained weights", size: 16, anchor: "start", textCls: "tag-text" });
+    new VectorObj("p:toy", LAYER.main, { n: 4, size: 28, gap: 100, orient: "row", src: `X.${FOCUS}`, d: 2, cls: "v-x" });
+    new TextObj("p:toylab", LAYER.main, { rich: "\\i{x}_{it} =", size: 30, anchor: "end", textCls: "serif" });
+    new TextObj("p:toydim", LAYER.main, { rich: `∈ ℝ^{${E.CONFIG.dModel}}`, size: 28, anchor: "start", textCls: "serif muted" });
+    const xS = heatScale(PAPER.X), qS = heatScale(...PAPER.heads.map((h) => h.Q)), kS = heatScale(...PAPER.heads.map((h) => h.K));
+    const vS = heatScale(...PAPER.heads.map((h) => h.V)), zS = heatScale(PAPER.Concat);
+    new CMatObj("p:X", LAYER.main, { M: PAPER.X, rowSrc: (r) => `paper.X.${r}`, lead: 3, tone: "x", mid: PS.mid, cw: PD.dModel * PS.k, crowH: 16, solo: FOCUS, hlRow: FOCUS, vmax: xS });
+    new TextObj("p:xlab", LAYER.main, { rich: "\\i{x}_{it} =", size: 30, anchor: "end", textCls: "serif" });
+    new TextObj("p:xdim", LAYER.main, { rich: `∈ ℝ^{${PD.dModel}}`, size: 28, anchor: "start", textCls: "serif muted" });
+    new TextObj("p:note", LAYER.main, { text: "illustrative values — not trained weights", size: 20, textCls: "note-text" });
+    // DEMO / PAPER comparison: one text per cell so the columns line up
+    const dimsOf = (C) => [`${N} tokens`, `\\i{d}_{model} = ${C.dModel}`, `${C.nHeads} heads`, `\\i{d}_{k} = \\i{d}_{v} = ${C.dK}`];
+    [["d", "DEMO", E.CONFIG, "serif muted"], ["p", "PAPER", PD, "serif"]].forEach(([k, tag, C, cls]) => {
+      new TextObj(`p:cmp:${k}t`, LAYER.main, { text: tag, size: 16, anchor: "end", textCls: "lane-tag" });
+      dimsOf(C).forEach((rich, i) => new TextObj(`p:cmp:${k}${i}`, LAYER.main, { rich, size: 26, anchor: "start", textCls: cls }));
+    });
+    new TextObj("p:Xlab", LAYER.main, { parts: [["\\i{X} = \\i{E} + ", null], ["PE", "f-pe"], [` ∈ ℝ^{${N}×${PD.dModel}}`, null]], size: 30, textCls: "serif" });
+    new TextObj("p:Xdims", LAYER.main, { text: `${N} tokens  ×  ${PD.dModel} features`, size: 22, textCls: "dims-text" });
+    // one head's projections: W ∈ R^{512×64} (head 1's illustrative weights, drawn entry by entry)
+    const W1p = E.paperHeadWeights(0);
+    for (const b of BRANCHES) {
+      const B = BR[b], dOut = b === "v" ? PD.dV : PD.dK;
+      new PathObj(`p:w1:${b}`, LAYER.back, { geo: [0, 0, 1, 0, 2, 0, 3, 0], cls: `wire s-${b}`, glowCls: `wire-glow s-${b}` });
+      new BlockObj(`p:W:${b}`, LAYER.main, { url: heatURL(`W${B.label}:0`, W1p[B.W], b, heatScale(W1p[B.W])), tone: b, rows: PD.dModel });
+      new TextObj(`p:Wlab:${b}`, LAYER.main, { rich: `\\i{W}_{${B.label}} ∈ ℝ^{${PD.dModel}×${dOut}}`, size: 26, textCls: `serif f-${b}` });
+      new PathObj(`p:w2:${b}`, LAYER.back, { geo: polyGeo([[0, 0], [1, 0]]), cls: `wire s-${b}`, arrow: `arr-${b}` });
+      new TextObj(`p:Olab:${b}`, LAYER.main, { rich: `\\i{${B.label}} ∈ ℝ^{${N}×${dOut}}`, size: 26, anchor: "start", textCls: `serif f-${b}` });
+    }
+    // every head's Q, K, V and output (head 1's Q, K, V also serve the one-head beat)
+    PAPER.heads.forEach((hd, h) => {
+      for (const [b, M, sc] of [["q", hd.Q, qS], ["k", hd.K, kS], ["v", hd.V, vS]])
+        new BlockObj(`p:B:${b}${h}`, LAYER.main, { url: heatURL(`paper.heads.${h}.${b}`, M, b, sc), tone: b, rows: N, hlRow: h === 0 && b === "q" ? FOCUS : -1 });
+      new BlockObj(`p:B:z${h}`, LAYER.main, { url: heatURL(`paper.heads.${h}.Z`, hd.Z, "v", zS), tone: "v", rows: N });
+      new TextObj(`p:lt:${h}`, LAYER.main, { text: `HEAD ${h + 1}`, size: 16, anchor: "start", textCls: "lane-tag" });
+      new PathObj(`p:lw:${h}`, LAYER.back, { geo: polyGeo([[0, 0], [1, 0]]), cls: "wire s-n", arrow: "arr" });
+      new PathObj(`p:fw:${h}`, LAYER.back, { geo: [0, 0, 1, 0, 2, 0, 3, 0], cls: "wire s-v" });
+    });
+    // one row, compressed: x_it × W_Q → q_it
+    new CMatObj("p:xrow", LAYER.main, { M: [PAPER.X[FOCUS]], rowSrc: () => `paper.X.${FOCUS}`, lead: 3, tone: "x", size: 26, mid: 210, vmax: xS });
+    new CMatObj("p:qrow", LAYER.main, { M: [PAPER.heads[0].Q[FOCUS]], rowSrc: () => `paper.heads.0.Q.${FOCUS}`, lead: 2, tone: "q", size: 26, mid: 74, vmax: qS });
+    new TextObj("p:op", LAYER.main, { parts: [["×  ", "muted"], ["\\i{W}_{Q}", "f-q"], ["   →", "muted"]], size: 30, textCls: "serif" });
+    new TextObj("p:xrowlab", LAYER.main, { rich: `\\i{x}_{it} ∈ ℝ^{${PD.dModel}}`, size: 22, textCls: "serif muted" });
+    new TextObj("p:qrowlab", LAYER.main, { rich: `\\i{q}_{it} ∈ ℝ^{${PD.dK}}`, size: 22, textCls: "serif f-q" });
+    // eight heads in parallel → Concat → W^O
+    for (const [k, rich, cls] of [["hq", "\\i{Q}_{h}", "f-q"], ["hk", "\\i{K}_{h}", "f-k"], ["hv", "\\i{V}_{h}", "f-v"], ["hz", "head_{h}", "f-v"]])
+      new TextObj(`p:${k}`, LAYER.main, { rich, size: 24, textCls: `serif ${cls}` });
+    new TextObj("p:hform", LAYER.main, { rich: `head_{h} = softmax(\\i{Q}_{h}\\i{K}_{h}^{T} / √${PD.dK}) \\i{V}_{h}`, size: 26, textCls: "serif" });
+    new TextObj("p:hdims", LAYER.main, { rich: `\\i{Q}_{h}, \\i{K}_{h}, \\i{V}_{h}, head_{h} ∈ ℝ^{${N}×${PD.dK}}`, size: 22, textCls: "serif muted" });
+    new BlockObj("p:B:cat", LAYER.main, { url: heatURL("paper.Concat", PAPER.Concat, "v", zS), tone: "v", rows: N, segments: PD.nHeads });
+    const WOp = E.paperWO();
+    new BlockObj("p:B:wo", LAYER.main, { url: heatURL("WO", WOp, "n", heatScale(WOp)), tone: "n", rows: WOp.length });
+    new BlockObj("p:B:mh", LAYER.main, { url: heatURL("paper.MH", PAPER.MH, "n", heatScale(PAPER.MH)), tone: "n", rows: N });
+    for (const k of ["cw1", "cw2"]) new PathObj(`p:${k}`, LAYER.back, { geo: polyGeo([[0, 0], [0, 1]]), cls: "wire s-n", arrow: "arr" });
+    new TextObj("p:catlab", LAYER.main, { rich: `Concat(head_{1}, …, head_{${PD.nHeads}}) ∈ ℝ^{${N}×${PD.nHeads * PD.dV}}`, size: 26, textCls: "serif f-v" });
+    new TextObj("p:wolab", LAYER.main, { rich: `\\i{W}^{O} ∈ ℝ^{${PD.nHeads * PD.dV}×${PD.dModel}}`, size: 26, anchor: "start", textCls: "serif" });
+    new TextObj("p:mhlab", LAYER.main, { rich: `MultiHead(\\i{Q}, \\i{K}, \\i{V}) ∈ ℝ^{${N}×${PD.dModel}}`, size: 26, textCls: "serif" });
+    // where it lives: the three uses of multi-head attention (§3.2.3), with per-head shapes
+    for (const [k, text, anchor] of [["1", "ENCODER SELF-ATTENTION", "middle"], ["2", "ENCODER–DECODER ATTENTION", "start"], ["3", "MASKED SELF-ATTENTION", "start"]])
+      new TextObj(`p:u:t${k}`, LAYER.main, { text, size: 16, anchor, textCls: "lane-tag" });
+    const qkvAll = (len) => [["\\i{Q}", "f-q"], [", ", null], ["\\i{K}", "f-k"], [", ", null], ["\\i{V}", "f-v"], [`:  ${len} × ${PD.dK} per head`, null]];
+    new TextObj("p:u:d1", LAYER.main, { parts: qkvAll("\\i{s}"), size: 24, textCls: "serif" });
+    new TextObj("p:u:d2", LAYER.main, { parts: [["\\i{Q}", "f-q"], [`:  \\i{t} × ${PD.dK}   ·   `, null], ["\\i{K}", "f-k"], [", ", null], ["\\i{V}", "f-v"], [`:  \\i{s} × ${PD.dK}`, null]], size: 24, anchor: "start", textCls: "serif" });
+    new TextObj("p:u:d3", LAYER.main, { parts: qkvAll("\\i{t}"), size: 24, anchor: "start", textCls: "serif" });
+    new TextObj("p:u:l1", LAYER.main, { text: `${PD.nHeads} heads in each block`, size: 20, anchor: "start", textCls: "dims-text" });
+    new TextObj("p:u:l2", LAYER.main, { rich: "\\i{s} = source tokens  ·  \\i{t} = target tokens", size: 20, anchor: "start", textCls: "dims-text" });
+    const fin = new TextObj("p:final", LAYER.hud, { size: 32, textCls: "caption" });
+    svg("tspan", { x: 0 }, fin.t).textContent = "The math did not change.";
+    svg("tspan", { x: 0, dy: "1.3em" }, fin.t).textContent = "Only the dimensionality and number of heads increased.";
     // Explore: its own copy of the attention table (exploring never rebinds the guided scenes' numbers)
     new TextObj("ex:qword", LAYER.main, { text: TOKENS[FOCUS], size: 43, textCls: "token-text" });
     new DotObj("ex:qnode", LAYER.main, { r: 5.5, cls: "f-n", glow: "g-node" });
@@ -1616,6 +1965,7 @@ body.exploring .ex-hit:hover { fill: rgba(207, 217, 235, 0.05); }
     // re-measure number widths now that fonts are final, and re-space every vector accordingly
     NUMW.clear();
     for (const o of REG.values()) if (o instanceof VectorObj) { o.cellW = o.cellWFor(o.d); o.relayout(); }
+    for (const o of REG.values()) if (o instanceof CMatObj) o.relayout();
     REG.get("title").measure();
     REG.get("keylab:it").measure();
     for (const o of REG.values()) if (o instanceof TokenObj && o.w === undefined) o.measure();
@@ -2131,6 +2481,99 @@ body.exploring .ex-hit:hover { fill: rgba(207, 217, 235, 0.05); }
     L.put("fin:l", { geo: polyGeo([[FIN.x - FIN.w / 2 + 24, iy], [mb.x - mb.w / 2, by]]), o: 1, draw: 1 })
       .put("fin:r", { geo: polyGeo([[FIN.x + FIN.w / 2 - 24, iy], [mb.x + mb.w / 2, by]]), o: 1, draw: 1 });
     return miniInto(L, FIN, { top: 0 });
+  }
+
+  // ---- Epilogue (paper scale): the same operations at the base model's sizes, with illustrative values
+  const HUDp = (L) => HUD(L, { tag: false }).put("tag:paper", { x: 72, y: 88, o: 1 });
+  // DEMO / PAPER: one column per quantity; widths measured so the block is centred and the columns align
+  function cmpRows(L) {
+    const ws = [0, 1, 2, 3].map((i) => Math.max(REG.get(`p:cmp:d${i}`).width(), REG.get(`p:cmp:p${i}`).width()));
+    const gap = 58, tagW = 92, tagX = 960 - (tagW + 4 * gap + ws.reduce((a, b) => a + b, 0)) / 2 + tagW;
+    ["d", "p"].forEach((k, r) => {
+      const y = PS.cmpY[r];
+      L.put(`p:cmp:${k}t`, { x: tagX, y: y + 2, o: 1 });
+      let x = tagX + gap;
+      ws.forEach((w, i) => { L.put(`p:cmp:${k}${i}`, { x, y: y + 6, o: 1 }); x += w + gap; });
+    });
+    return L;
+  }
+  function Lp_vector() {
+    const L = cap(HUDp(new Layout()), "pvector"), thw = vecHalfW("p:toy", 100, 2), X = REG.get("p:X"), hw = X.halfW();
+    L.put("p:toy", { x: 960, y: PS.toyY, s: 1, o: 1, orient: "row", gap: 100, src: `X.${FOCUS}`, d: 2, cls: "v-x" })
+      .put("p:toylab", { x: 960 - thw - 18, y: PS.toyY + 10, o: 1 }).put("p:toydim", { x: 960 + thw + 18, y: PS.toyY + 10, o: 1 })
+      .put("p:X", { x: 960, y: PS.vecY - X.rowOff(FOCUS), s: 1, o: 1, so: 1, ix: 1, glow: 1 })
+      .put("p:xlab", { x: 960 - hw - 18, y: PS.vecY + 10, o: 1 }).put("p:xdim", { x: 960 + hw + 18, y: PS.vecY + 10, o: 1 })
+      .put("p:note", { x: 960, y: PS.vecY + PS.noteDy, o: 1 });
+    return cmpRows(L);
+  }
+  function Lp_matrix() {
+    const L = cap(HUDp(new Layout()), "pmatrix"), X = REG.get("p:X"), hw = X.halfW();
+    L.put("p:X", { x: PS.matX, y: PS.matY, s: 1, o: 1, ix: 1, hla: 0.55, glow: 0.25 });
+    for (let j = 0; j < N; j++) {
+      const w = REG.get(`tok:${j}`).w * PS.rowS;
+      L.put(`tok:${j}`, { x: PS.matX - hw - 22 - w / 2, y: PS.matY + X.rowOff(j) + 9, s: PS.rowS, o: 1, pill: 0 });
+    }
+    const top = PS.matY + X.rowOff(0) - X.rowH / 2, bot = PS.matY + X.rowOff(N - 1) + X.rowH / 2;
+    return L.put("p:Xlab", { x: PS.matX, y: top - 60, o: 1 }).put("p:Xdims", { x: PS.matX, y: bot + 48, o: 1 });
+  }
+  const pW = (b) => (b === "v" ? PD.dV : PD.dK) * PS.k; // drawn width of a 64-dimensional block
+  function Lp_qkv() {
+    const L = cap(HUDp(new Layout()), "pqkv"), C = PS.c, X = REG.get("p:X");
+    const xh = (N * X.crowH) / 2, xr = C.xX + X.cw / 2 + 7;
+    L.put("p:X", { x: C.xX, y: C.xY, s: 1, o: 1, c: 1, hla: 0.9 }).put("p:Xlab", { x: C.xX, y: C.xY - xh - 36, o: 1 });
+    for (const b of BRANCHES) {
+      const y = C.ys[b], wl = C.wX - C.wW / 2 - 16, wr = C.wX + C.wW / 2 + 16, ol = C.oX - pW(b) / 2 - 18;
+      L.put(`p:w1:${b}`, { geo: [xr + 8, C.xY, xr + 120, C.xY, wl - 110, y, wl, y], o: 1, draw: 1 })
+        .put(`p:W:${b}`, { x: C.wX, y, w: C.wW, h: C.wH, s: 1, o: 1, glow: 0.3 })
+        .put(`p:Wlab:${b}`, { x: C.wX, y: y - C.wH / 2 - 26, o: 1 })
+        .put(`p:w2:${b}`, { geo: polyGeo([[wr, y], [ol, y]]), o: 1, draw: 1 })
+        .put(`p:B:${b}0`, { x: C.oX, y, w: pW(b), h: N * X.crowH, s: 1, o: 1, glow: 0.3, hla: b === "q" ? 0.9 : 0 })
+        .put(`p:Olab:${b}`, { x: C.oX + pW(b) / 2 + 26, y: y + 10, o: 1 });
+    }
+    // one row, compressed: x_it × W_Q → q_it
+    const xr2 = REG.get("p:xrow"), qr = REG.get("p:qrow"), wx = xr2.halfW(), wq = qr.halfW(), wop = REG.get("p:op").width(), g = 34;
+    let x = 960 - (2 * wx + 2 * wq + wop + 2 * g) / 2;
+    L.put("p:xrow", { x: x + wx, y: C.exY, s: 1, o: 1, glow: 0.6 }).put("p:xrowlab", { x: x + wx, y: C.exY + 52, o: 1 });
+    x += 2 * wx + g;
+    L.put("p:op", { x: x + wop / 2, y: C.exY + 10, o: 1 });
+    x += wop + g;
+    return L.put("p:qrow", { x: x + wq, y: C.exY, s: 1, o: 1, glow: 0.6 }).put("p:qrowlab", { x: x + wq, y: C.exY + 52, o: 1 });
+  }
+  const pLaneY = (h) => PS.d.y0 + h * PS.d.gap;
+  function Lp_heads() {
+    const L = cap(HUDp(new Layout()), "pheads"), D = PS.d, bw = pW("q"), catW = PD.dModel * PS.k;
+    for (let h = 0; h < PD.nHeads; h++) {
+      const y = pLaneY(h), x0 = D.zX + bw / 2 + 14, x1 = D.catX - catW / 2 - 16, ye = D.catY + (h - (PD.nHeads - 1) / 2) * 9;
+      L.put(`p:lt:${h}`, { x: D.tagX, y: y + 6, o: 1 });
+      for (const b of BRANCHES) L.put(`p:B:${b}${h}`, { x: D.cols[b], y, w: bw, h: D.bh, s: 1, o: 1 });
+      L.put(`p:lw:${h}`, { geo: polyGeo([[D.cols.v + bw / 2 + 14, y], [D.zX - bw / 2 - 14, y]]), o: 1, draw: 1 })
+        .put(`p:B:z${h}`, { x: D.zX, y, w: bw, h: D.bh, s: 1, o: 1 })
+        .put(`p:fw:${h}`, { geo: [x0, y, x0 + 200, y, x1 - 200, ye, x1, ye], o: 0.45, draw: 1 });
+    }
+    const hy = D.y0 - D.bh / 2 - 26;
+    for (const [k, x] of [["hq", D.cols.q], ["hk", D.cols.k], ["hv", D.cols.v], ["hz", D.zX]]) L.put(`p:${k}`, { x, y: hy, o: 1 });
+    const fy = pLaneY(PD.nHeads - 1) + D.bh / 2 + 52, fx = (D.tagX + D.zX + bw / 2) / 2;
+    L.put("p:hform", { x: fx, y: fy, o: 1 }).put("p:hdims", { x: fx, y: fy + 38, o: 1 });
+    return L.put("p:B:cat", { x: D.catX, y: D.catY, w: catW, h: D.catH, s: 1, o: 1, glow: 0.3 })
+      .put("p:catlab", { x: D.catX, y: D.catY - D.catH / 2 - 28, o: 1 })
+      .put("p:cw1", { geo: polyGeo([[D.catX, D.catY + D.catH / 2 + 10], [D.catX, D.woY - D.woS / 2 - 12]]), o: 1, draw: 1 })
+      .put("p:B:wo", { x: D.catX, y: D.woY, w: D.woS, h: D.woS, s: 1, o: 1, glow: 0.25 })
+      .put("p:wolab", { x: D.catX + D.woS / 2 + 28, y: D.woY + 10, o: 1 })
+      .put("p:cw2", { geo: polyGeo([[D.catX, D.woY + D.woS / 2 + 10], [D.catX, D.mhY - D.catH / 2 - 12]]), o: 1, draw: 1 })
+      .put("p:B:mh", { x: D.catX, y: D.mhY, w: catW, h: D.catH, s: 1, o: 1, glow: 0.3 })
+      .put("p:mhlab", { x: D.catX, y: D.mhY + D.catH / 2 + 46, o: 1 });
+  }
+  // the three uses of multi-head attention (§3.2.3), in the order they light up
+  const USES = [["enc:mhsa", ["p:u:t1", "p:u:d1"]], ["dec:mm", ["p:u:t3", "p:u:d3"]], ["dec:cross", ["p:u:t2", "p:u:d2"]]];
+  function Lp_uses() {
+    const L = L10_cross().hide("cap:cross").hide("tag").put("tag:paper", { x: 72, y: 88, o: 1 }), U = PS.u;
+    tokenRowAt(L, DTOK, decGeo().x, TB.tokY);
+    for (const [id] of USES) L.put(id, { glow: 1 });
+    L.put("p:u:t1", { x: U.encX, y: U.t1, o: 1 }).put("p:u:d1", { x: U.encX, y: U.d1, o: 1 })
+      .put("p:u:t2", { x: U.rx, y: U.t2, o: 1 }).put("p:u:d2", { x: U.rx, y: U.d2, o: 1 })
+      .put("p:u:t3", { x: U.rx, y: U.t3, o: 1 }).put("p:u:d3", { x: U.rx, y: U.d3, o: 1 })
+      .put("p:u:l1", { x: U.rx, y: U.l1, o: 1 }).put("p:u:l2", { x: U.rx, y: U.l2, o: 1 });
+    return L.put("p:final", { x: 960, y: U.fin, o: 1 });
   }
 
   // ---------------------------------------------------------------------------- EXPLORE
@@ -2977,8 +3420,124 @@ body.exploring .ex-hit:hover { fill: rgba(207, 217, 235, 0.05); }
     await run.morph("cap:final", L.get("cap:final"), { dur: 900 });
   }
 
+  // Morph one object to its target in layout L, with its layout defaults (as applyLayout does), so props a
+  // layout leaves unset (a highlight, a solo row, the index header) animate back too instead of snapping later.
+  const pto = (run, L, id, opts) => run.morph(id, { ...REG.get(id).layoutDefaults(), ...L.get(id) }, opts);
+
+  // ---- Epilogue: from the full Transformer back to one token. The toy x_it, then a vector of the paper's size:
+  // the toy's brackets stretch out, the strip draws in and different numbers appear — a separate, much larger
+  // space with illustrative values, not the 4-d vector extended.
+  async function paperVector(run) {
+    const L = Lp_vector();
+    await fadeOutsideOf(run, L, 520);
+    if (run.dead) return;
+    await Promise.all([pto(run, L, "tag:paper", { dur: 400 }), pto(run, L, "cap:pvector", { dur: 560 })]);
+    await reveal(run, L, [["p:toy"], ["p:toylab", "p:toydim"], ["p:cmp:dt", "p:cmp:d0", "p:cmp:d1", "p:cmp:d2", "p:cmp:d3"]], { dur: 480, gap: 180 });
+    if (run.dead) return;
+    const toy = REG.get("p:toy"), X = REG.get("p:X"), tX = L.get("p:X");
+    const gb = run.own(new BracketPair(LAYER.fx, "v-x"));
+    run.set(gb, { x: toy.x, y: toy.y, hw: toy.bw * toy.s, hh: toy.bh * toy.s, o: 0.95 });
+    await run.tween(gb, { x: tX.x, y: PS.vecY, hw: X.halfW(), hh: X.size * 0.82 }, { dur: 960 });
+    if (run.dead) return;
+    run.set(X, { ...X.layoutDefaults(), ...tX, nu: 0, ix: 0, draw: 0, glow: 0 });
+    run.set(gb, { o: 0 });
+    await Promise.all([run.tween(X, { draw: 1, glow: 1 }, { dur: 1040, ease: EASE.out }), run.tween(X, { nu: 1 }, { dur: 480, delay: 520 }), run.tween(X, { ix: 1 }, { dur: 480, delay: 760 })]);
+    await reveal(run, L, [["p:xlab", "p:xdim"], ["p:note"], ["p:cmp:pt", "p:cmp:p0", "p:cmp:p1", "p:cmp:p2", "p:cmp:p3"]], { dur: 480, gap: 210 });
+  }
+
+  // ---- Epilogue: that vector is one row of X; the other seven tokens' rows open up around it
+  async function paperMatrixPlay(run) {
+    const L = Lp_matrix();
+    await fadeOutsideOf(run, L, 360);
+    if (run.dead) return;
+    await pto(run, L, "p:X", { dur: 1120 });
+    if (run.dead) return;
+    await reveal(run, L, [...TOKENS.map((_, j) => [`tok:${j}`]), ["p:Xlab"], ["p:Xdims", "cap:pmatrix"]], { dur: 400, gap: 90 });
+  }
+
+  // ---- Epilogue: one head at paper size — X (8×512) · W (512×64) = Q, K, V (8×64)
+  async function paperQKVPlay(run) {
+    const L = Lp_qkv();
+    await fadeOutsideOf(run, L, 360);
+    if (run.dead) return;
+    // X folds into a compact block: the numbers are swallowed, one strip per token remains
+    await Promise.all([pto(run, L, "p:X", { dur: 1120 }), pto(run, L, "p:Xlab", { dur: 1120 })]);
+    if (run.dead) return;
+    await reveal(run, L, [["p:w1:q", "p:w1:k", "p:w1:v"], ["p:W:q", "p:W:k", "p:W:v", "p:Wlab:q", "p:Wlab:k", "p:Wlab:v"], ["p:w2:q", "p:w2:k", "p:w2:v"],
+      ["p:B:q0", "p:B:k0", "p:B:v0", "p:Olab:q", "p:Olab:k", "p:Olab:v"]], { dur: 520, gap: 260 });
+    if (run.dead) return;
+    // the row of "it" travels through W_Q and becomes the query row of "it"
+    await pulse(run, "p:w1:q", "q", { dur: 600 });
+    await pulse(run, "p:w2:q", "q", { dur: 440 });
+    if (run.dead) return;
+    const X = REG.get("p:X"), Q = REG.get("p:B:q0"), xa = X.rowAbs(FOCUS), qy = Q.y - Q.h / 2 + ((FOCUS + 0.5) * Q.h) / N;
+    const xr = REG.get("p:xrow"), qr = REG.get("p:qrow"), tx = L.get("p:xrow"), tq = L.get("p:qrow");
+    run.set(xr, { ...xr.layoutDefaults(), ...tx, x: xa.x, y: xa.y, s: 0.45, o: 0, glow: 0 });
+    run.set(qr, { ...qr.layoutDefaults(), ...tq, x: Q.x, y: qy, s: 0.3, o: 0, glow: 0 });
+    await Promise.all([run.tween(xr, { x: tx.x, y: tx.y, s: 1, o: 1, glow: tx.glow }, { dur: 880 }), run.tween(qr, { x: tq.x, y: tq.y, s: 1, o: 1, glow: tq.glow }, { dur: 880, delay: 280 }),
+      pto(run, L, "p:op", { dur: 480, delay: 560 })]);
+    await reveal(run, L, [["p:xrowlab", "p:qrowlab"], ["cap:pqkv"]], { dur: 480, gap: 200 });
+  }
+
+  // ---- Epilogue: the same head eight times over, each with its own W_Q, W_K, W_V — then Concat and W^O
+  async function paperHeadsPlay(run) {
+    const L = Lp_heads(), heads = [...Array(PD.nHeads).keys()];
+    await fadeOutsideOf(run, L, 360);
+    if (run.dead) return;
+    // head 1's Q, K and V (just computed) become the first lane
+    await Promise.all(BRANCHES.map((b) => pto(run, L, `p:B:${b}0`, { dur: 800 })));
+    if (run.dead) return;
+    await reveal(run, L, [["p:hq", "p:hk", "p:hv", "p:lt:0"], ...heads.slice(1).map((h) => [`p:lt:${h}`, ...BRANCHES.map((b) => `p:B:${b}${h}`)])], { dur: 360, gap: 90 });
+    if (run.dead) return;
+    await reveal(run, L, [["p:hz"], ...heads.map((h) => [`p:lw:${h}`, `p:B:z${h}`])], { dur: 360, gap: 70 });
+    if (run.dead) return;
+    await reveal(run, L, [["p:hform", "p:hdims"], heads.map((h) => `p:fw:${h}`)], { dur: 560, gap: 210 });
+    if (run.dead) return;
+    // the eight 64-wide head outputs slide side by side into one 512-wide block: Concat
+    const cat = L.get("p:B:cat"), seg = cat.w / PD.nHeads;
+    const flies = heads.map((h) => {
+      const z = REG.get(`p:B:z${h}`), f = run.own(new BlockObj(null, LAYER.fx, { url: z.url, tone: "v", w: z.w, h: z.h }));
+      run.set(f, { x: z.x, y: z.y, o: 1 });
+      return f;
+    });
+    await Promise.all(flies.map((f, h) => run.tween(f, { x: cat.x - cat.w / 2 + seg * (h + 0.5), y: cat.y, w: seg, h: cat.h }, { dur: 880, delay: 40 * h })));
+    if (run.dead) return;
+    await Promise.all([pto(run, L, "p:B:cat", { dur: 240 }), pto(run, L, "p:catlab", { dur: 480 })]);
+    flies.forEach((f) => run.set(f, { o: 0 }));
+    await reveal(run, L, [["p:cw1"], ["p:B:wo", "p:wolab"], ["p:cw2"], ["p:B:mh", "p:mhlab"], ["cap:pheads"]], { dur: 480, gap: 240 });
+  }
+
+  // ---- Epilogue: back to the full Transformer — the same multi-head attention, used in three ways (§3.2.3)
+  async function paperUsesPlay(run) {
+    const L = Lp_uses(), mb = encGeo("tower").blocks.mhsa;
+    const leaving = [...REG.values()].filter((o) => o.id && o.o > 0.01 && !(L.get(o.id)?.o > 0));
+    await Promise.all(leaving.filter((o) => !(o instanceof BlockObj)).map((o) => run.morph(o, { o: 0 }, { dur: 280 })));
+    if (run.dead) return;
+    // the encoder's self-attention block appears, and the whole eight-head machine folds into it…
+    await run.morph("enc:mhsa", { ...REG.get("enc:mhsa").layoutDefaults(), ...L.get("enc:mhsa"), glow: 0.8 }, { dur: 360 });
+    if (run.dead) return;
+    const k = 0.075, cx = 800, cy = 550; // the machine's centre, mapped onto the block
+    await Promise.all(leaving.filter((o) => o instanceof BlockObj).map((b) =>
+      run.tween(b, { x: mb.x + k * (b.x - cx), y: mb.y + k * (b.y - cy), w: b.w * k, h: b.h * k, o: 0 }, { dur: 800, ease: EASE.inOut })));
+    if (run.dead) return;
+    // …and the rest of the Transformer returns around it
+    const diagram = [...L.keys()].filter((id) => L.get(id).o > 0 && !/^p:(u:|final)/.test(id) && id !== "enc:mhsa" && REG.get(id).o < 0.99);
+    await Promise.all(diagram.map((id) => run.morph(id, { ...REG.get(id).layoutDefaults(), ...L.get(id), ...(USES.some(([u]) => u === id) ? { glow: 0 } : {}) }, { dur: 720 })));
+    if (run.dead) return;
+    await run.morph("cap:puses", { x: 960, y: Y.cap, o: 1 }, { dur: 480 });
+    for (const [blk, ids] of USES) {
+      await Promise.all([run.morph(blk, { glow: 1 }, { dur: 480 }), ...ids.map((id, i) => pto(run, L, id, { dur: 480, delay: 100 + 100 * i }))]);
+      if (run.dead) return;
+      if (blk === "dec:cross") await Promise.all([pulse(run, "x:k", "k", { dur: 880 }), pulse(run, "x:v", "v", { dur: 880, delay: 100 }), pulse(run, "x:q", "q", { dur: 480, delay: 240 })]);
+      else await run.wait(360);
+    }
+    await reveal(run, L, [["p:u:l1", "p:u:l2"]], { dur: 480 });
+    await run.morph("cap:puses", { o: 0 }, { dur: 360 });
+    await pto(run, L, "p:final", { dur: 720 });
+  }
+
   // ---------------------------------------------------------------------------- SCENES
-  const GUIDED_SCENES = 10; // Explore follows the ten guided scenes
+  const GUIDED_SCENES = 10; // Explore follows the ten guided scenes and the short paper-scale epilogue
   const SCENES = [
     { label: "Sentence", title: "Sentence" },
     { label: "Vectors", title: "Vectors" },
@@ -2990,6 +3549,7 @@ body.exploring .ex-hit:hover { fill: rgba(207, 217, 235, 0.05); }
     { label: "Heads", title: "Multi-head attention" },
     { label: "Encoder", title: "Encoder layer" },
     { label: "Transformer", title: "Full Transformer" },
+    { label: "Paper scale", title: "Paper scale", epilogue: true },
     { label: "Explore", title: "Explore" },
   ];
   const NOTES = [
@@ -3003,6 +3563,7 @@ body.exploring .ex-hit:hover { fill: rgba(207, 217, 235, 0.05); }
     "The same calculation is head 1. Head 2 has its own W_Q, W_K, W_V, so the same sentence gets different weights. Both outputs are concatenated and projected by W_O. The paper uses 8 heads of size 64; we use 2 of size 2. These toy heads were not trained, so they have no learned roles.",
     "Everything so far is one block: multi-head self-attention. Its output is added to its input (residual connection) and normalised: LayerNorm(x + Sublayer(x)). A small feed-forward network acts on each position separately (4→8→4 here, 512→2048→512 in the paper), followed by another Add & Norm. The paper stacks N = 6 such layers; the demo computes one.",
     "A separate translation example: ‘The animal is tired.’ → ‘L’animal est fatigué.’ The decoder masks future positions (−∞ before softmax, exactly 0 after). In cross-attention the queries come from the decoder and the keys and values from the encoder output. The next-token probabilities are illustrative, not from a trained model. Generation is one token at a time: predict, append, feed back.",
+    "Epilogue — the same mechanism at the paper's size. Each token is a 512-number vector (X is 8 × 512); each of the 8 heads has its own 512 × 64 W_Q, W_K, W_V, so Q, K, V are 8 × 64 per head and the scores are divided by √64 = 8; the eight 64-wide head outputs are concatenated back to 512 before W^O. These are seeded illustrative values, not trained weights — and the 4-d vector is not a truncated 512-d one: it belongs to a separate, tiny model. The same multi-head attention is used three times: encoder self-attention, masked decoder self-attention, encoder–decoder attention.",
     "Explore: click any word (or ↑ / ↓) to make it the query; switch heads; turn positional encoding off; try a different divisor (a what-if experiment — the paper always uses √d_k). Every number is recomputed by the same engine.",
   ];
 
@@ -3251,8 +3812,14 @@ body.exploring .ex-hit:hover { fill: rgba(207, 217, 235, 0.05); }
     { scene: 9, id: "output", layout: L10_output, play: (run) => outputProbs(run) },
     { scene: 9, id: "loop", layout: L10_loop, play: (run) => loopBack(run) },
     { scene: 9, id: "final", layout: L10_final, play: (run) => finalShot(run) },
+    // ---- EPILOGUE — PAPER SCALE: the same operations at d_model = 512, 8 heads, d_k = d_v = 64 (illustrative values)
+    { scene: 10, id: "p-vector", layout: Lp_vector, play: (run) => paperVector(run) },
+    { scene: 10, id: "p-matrix", layout: Lp_matrix, play: (run) => paperMatrixPlay(run) },
+    { scene: 10, id: "p-qkv", layout: Lp_qkv, play: (run) => paperQKVPlay(run) },
+    { scene: 10, id: "p-heads", layout: Lp_heads, play: (run) => paperHeadsPlay(run) },
+    { scene: 10, id: "p-uses", layout: Lp_uses, play: (run) => paperUsesPlay(run) },
     // ---- EXPLORE — the same calculation, live
-    { scene: 10, id: "explore", layout: L_explore, play: (run) => enterExplore(run) },
+    { scene: 11, id: "explore", layout: L_explore, play: (run) => enterExplore(run) },
   ];
 
   // ---------------------------------------------------------------------------- DIRECTOR (navigation)
@@ -3375,7 +3942,7 @@ body.exploring .ex-hit:hover { fill: rgba(207, 217, 235, 0.05); }
         b.type = "button";
         b.textContent = s.label;
         b.dataset.scene = k;
-        b.title = k < GUIDED_SCENES ? `${k + 1}. ${s.title}` : `${s.title} (E)`;
+        b.title = k < GUIDED_SCENES ? `${k + 1}. ${s.title}` : s.epilogue ? `Epilogue: ${s.title}` : `${s.title} (E)`;
         b.addEventListener("click", () => { director.autoplay = false; director.jump(BEATS.findIndex((x) => x.scene === k)); });
         nav.appendChild(b);
       });
@@ -3386,7 +3953,7 @@ body.exploring .ex-hit:hover { fill: rgba(207, 217, 235, 0.05); }
       const beat = BEATS[i];
       const sc = SCENES[beat.scene];
       const st = REG.get("status");
-      st.t.textContent = beat.scene < GUIDED_SCENES ? `${beat.scene + 1} / ${GUIDED_SCENES}  ·  ${sc.title}` : sc.title;
+      st.t.textContent = beat.scene < GUIDED_SCENES ? `${beat.scene + 1} / ${GUIDED_SCENES}  ·  ${sc.title}` : sc.epilogue ? `Epilogue  ·  ${sc.title}` : sc.title;
       const ex = beat.id === "explore";
       $("explore-ui").hidden = !ex;
       document.body.classList.toggle("exploring", ex);
@@ -3421,7 +3988,7 @@ body.exploring .ex-hit:hover { fill: rgba(207, 217, 235, 0.05); }
       const el = $("notes");
       el.hidden = !this.open;
       if (!this.open) return;
-      el.innerHTML = `<h2>Presenter notes · ${beat.scene < GUIDED_SCENES ? `${beat.scene + 1}. ` : ""}${SCENES[beat.scene].title}</h2><p>${NOTES[beat.scene] ?? ""}</p><p style="color:var(--ink-faint)">beat ${director.index + 1}/${BEATS.length} · ${beat.id} · N to hide</p>`;
+      el.innerHTML = `<h2>Presenter notes · ${beat.scene < GUIDED_SCENES ? `${beat.scene + 1}. ` : SCENES[beat.scene].epilogue ? "Epilogue · " : ""}${SCENES[beat.scene].title}</h2><p>${NOTES[beat.scene] ?? ""}</p><p style="color:var(--ink-faint)">beat ${director.index + 1}/${BEATS.length} · ${beat.id} · N to hide</p>`;
     },
   };
   const debug = {
@@ -3452,6 +4019,12 @@ body.exploring .ex-hit:hover { fill: rgba(207, 217, 235, 0.05); }
       });
       html += this.table("Concat(head_1, head_2)", MODEL.Concat, TOKENS, ["h1₁", "h1₂", "h2₁", "h2₂"]);
       html += this.table("MultiHead = Concat·W_O", MODEL.MH, TOKENS, dims);
+      // epilogue: the columns the paper-scale scene shows (seeded illustrative values; PE is the real formula)
+      const pick = (M, cols) => M.map((row) => cols.map((c) => row[c]));
+      const pX = [0, 1, 2, PD.dModel - 1], pQ = [0, 1, PD.dK - 1];
+      html += `<p>Epilogue (paper scale): seeded illustrative values, not trained weights; PE is the paper's formula at d_model = ${PD.dModel}. Only the columns shown on screen are listed.</p>`;
+      html += this.table(`paper X = E + PE (${N}×${PD.dModel})`, pick(PAPER.X, pX), TOKENS, pX.map((c) => `d${c}`));
+      html += this.table(`paper head 1: Q (${N}×${PD.dK})`, pick(PAPER.heads[0].Q, pQ), TOKENS, pQ.map((c) => `q${c}`));
       el.innerHTML = html;
       $("dbg-audit").addEventListener("click", () => this.render());
     },
@@ -3462,6 +4035,7 @@ body.exploring .ex-hit:hover { fill: rgba(207, 217, 235, 0.05); }
       <p class="lead">Built with LLM coding assistance.</p>
       <p>The demo uses a scaled-down Transformer attention calculation with pedagogical parameters. The mathematical operations follow Vaswani et al. (2017).</p>
       <p>Tiny teaching model — dimensions reduced so every calculation can be shown (d_model = 4, 2 heads, d_k = d_v = 2; the paper's base model uses 512, 8, 64). The mechanism is real Transformer attention. The small vectors and weights are illustrative teaching values, not weights from the original trained model.</p>
+      <p>The short paper-scale epilogue repeats the same operations at the paper's sizes (d_model = ${E.CONFIG.paper.dModel}, ${E.CONFIG.paper.nHeads} heads, d_k = d_v = ${E.CONFIG.paper.dK}) with seeded illustrative values — not trained weights. Its positional encoding is the paper's formula; only the first entries and the last entry of each vector are shown.</p>
       <p>What we asked the coding assistant to build:</p><p class="edit">${DISCLOSURE.asked}</p>
       <p>What we manually checked or fixed:</p><p class="edit">${DISCLOSURE.checked}</p>
       <label><input type="checkbox" id="force-motion" ${ui.forceMotion ? "checked" : ""}> Animate even when the system asks for reduced motion${reduceMQ.matches ? " (reduced motion is on)" : ""}</label>
@@ -3594,6 +4168,9 @@ body.exploring .ex-hit:hover { fill: rgba(207, 217, 235, 0.05); }
         if (o instanceof BarObj) st.w = n(o.w);
         if (o instanceof TokenObj) st.pill = Math.round(o.pill * 100) / 100;
         if (o instanceof TextObj) st.text = o.t.textContent;
+        const r100 = (v) => Math.round(v * 100) / 100;
+        if (o instanceof CMatObj) Object.assign(st, { c: r100(o.c), so: r100(o.so), nu: r100(o.nu), ix: r100(o.ix), hla: r100(o.hla), draw: r100(o.draw), glow: r100(o.glow) });
+        if (o instanceof BlockObj) Object.assign(st, { w: n(o.w), h: n(o.h), glow: r100(o.glow), hla: r100(o.hla), draw: r100(o.draw) });
         out[id] = st;
       }
       return out;

@@ -103,6 +103,81 @@ for key, toks in (("g4", dec["inputs"]), ("g5", dec["inputs"] + [dec["next"]])):
 vocab = data["decoder"]["vocab"]
 worst = max(worst, max_diff(softmax([dec["nextTokenLogits"][w] for w in vocab])[2], data["decoder"]["nextP"])); count += 1
 
+# ---- epilogue: the same operations at the paper's sizes (d_model = 512, h = 8, d_k = d_v = 64).
+# The values are seeded pseudo-random (illustrative). The generator is re-implemented here from its
+# definition — FNV-1a hash of "<seed>:<tag>" seeding mulberry32, uniform on [-a, a) — so every projection,
+# softmax, concatenation and output projection is recomputed independently of the page's code.
+M32 = 0xFFFFFFFF
+
+
+def imul(a, b):
+    return (a * b) & M32
+
+
+def fnv1a(text):
+    h = 0x811C9DC5
+    for ch in text:
+        h = imul(h ^ ord(ch), 0x01000193)
+    return h
+
+
+def mulberry32(seed):
+    state = seed & M32
+
+    def rnd():
+        nonlocal state
+        state = (state + 0x6D2B79F5) & M32
+        t = imul(state ^ (state >> 15), 1 | state)
+        t = ((t + imul(t ^ (t >> 7), 61 | t)) & M32) ^ t
+        return ((t ^ (t >> 14)) & M32) / 4294967296
+    return rnd
+
+
+paper = data["paper"]
+P_MODEL, P_HEADS, P_DK, P_DV = (paper["dims"][k] for k in ("dModel", "nHeads", "dK", "dV"))
+assert (P_MODEL, P_HEADS, P_DK, P_DV) == (512, 8, 64, 64), "paper §3.2.2 base-model sizes"
+
+
+def uniform(tag, n, amp):
+    rnd = mulberry32(fnv1a(f"{paper['seed']}:{tag}"))
+    return [(2 * rnd() - 1) * amp for _ in range(n)]
+
+
+def seeded_matrix(tag, rows, cols, amp):
+    flat = uniform(tag, rows * cols, amp)
+    return [flat[r * cols:(r + 1) * cols] for r in range(rows)]
+
+
+def pe_d(pos, d):
+    out = []
+    for i in range(d // 2):
+        angle = pos / (10000 ** (2 * i / d))
+        out += [math.sin(angle), math.cos(angle)]
+    return out
+
+
+n_tok = len(tokens)
+pE = [uniform(f"E:{t.lower()}", P_MODEL, 1.0) for t in tokens]
+pP = [pe_d(i, P_MODEL) for i in range(n_tok)]
+pX = [[pE[i][c] + pP[i][c] for c in range(P_MODEL)] for i in range(n_tok)]
+amp_in = math.sqrt(3 / P_MODEL)
+p_heads = []
+for h in range(P_HEADS):
+    W = {w: seeded_matrix(f"{w}{h}", P_MODEL, P_DK, amp_in) for w in ("WQ", "WK", "WV")}
+    Q, K, V = ([row_times(x, W[w]) for x in pX] for w in ("WQ", "WK", "WV"))
+    raw = [[sum(q[c] * k[c] for c in range(P_DK)) for k in K] for q in Q]
+    A = [softmax([s / math.sqrt(P_DK) for s in row])[2] for row in raw]
+    Z = [[sum(A[i][j] * V[j][c] for j in range(n_tok)) for c in range(P_DV)] for i in range(n_tok)]
+    p_heads.append(dict(Q=Q, K=K, V=V, A=A, Z=Z))
+p_concat = [sum((p_heads[h]["Z"][i] for h in range(P_HEADS)), []) for i in range(n_tok)]
+assert all(len(c) == P_HEADS * P_DV == P_MODEL for c in p_concat), "Concat(head_1..head_8) is 512 wide"
+WO = seeded_matrix("WO", P_HEADS * P_DV, P_MODEL, math.sqrt(3 / (P_HEADS * P_DV)))
+p_mh = [row_times(c, WO) for c in p_concat]
+worst = max(worst, max_diff(pX, paper["X"]), max_diff(p_concat, paper["Concat"]), max_diff(p_mh, paper["MH"])); count += 3
+for h in range(P_HEADS):
+    for key in ("Q", "K", "V", "A", "Z"):
+        worst = max(worst, max_diff(p_heads[h][key], paper["heads"][h][key])); count += 1
+
 print(f"compared {count} arrays; max |python - js| = {worst:.3e}")
 if worst > 1e-12:
     sys.exit("MISMATCH between the independent reference and the page engine")

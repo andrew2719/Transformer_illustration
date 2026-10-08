@@ -151,7 +151,7 @@ const nearlySame = (a, b) => {
   if (a === undefined || b === undefined) return a === b;
   for (const key of new Set([...Object.keys(a), ...Object.keys(b)])) {
     const x = a[key], y = b[key];
-    if (typeof x === "number" && typeof y === "number") { if (Math.abs(x - y) > (["o", "s", "draw", "glow", "lo", "ts", "pl", "pill"].includes(key) ? 0.02 : 1.5)) return false; }
+    if (typeof x === "number" && typeof y === "number") { if (Math.abs(x - y) > (["o", "s", "draw", "glow", "lo", "ts", "pl", "pill", "c", "so", "nu", "ix", "hla"].includes(key) ? 0.02 : 1.5)) return false; }
     else if (key === "geo" && typeof x === "string" && typeof y === "string") {
       const u = x.split(",").map(Number), v = y.split(",").map(Number);
       if (u.length !== v.length || u.some((n, i) => Math.abs(n - v[i]) > 1.5)) return false;
@@ -243,7 +243,7 @@ try {
   // ---------------------------------------------------------------- random jumps
   console.log("jumps");
   await evaluate("__demo.speed(6)");
-  for (const i of [7, 2, 13, 0, 10, 5, 14, 3, 11, 1, 18, 26, 16, 22, 24, 20, 15, 25, 33, 41, 28, 43, 36, 30, 38, 27, 42, 31, 35, 40, 29, 34, 37, 39, 32]) {
+  for (const i of [7, 2, 13, 0, 10, 5, 14, 3, 11, 1, 18, 26, 16, 22, 24, 20, 15, 25, 33, 41, 28, 43, 36, 30, 38, 27, 42, 31, 35, 40, 29, 34, 37, 39, 32, 46, 44, 48, 45, 42, 47, 43]) {
     if (i >= beats.length) continue;
     await evaluate(`__demo.goto(${i}, 400)`); await idle();
     await check(`jump to beat ${i + 1}`);
@@ -299,6 +299,9 @@ try {
   console.log("scenes 8–10 mid-animation");
   for (const [id, ms] of [["heads", 1400], ["head2", 2600], ["concat", 1500], ["wo", 2000], ["block", 1600], ["residual", 2600], ["ffn", 3800], ["stack", 1200],
     ["zoom", 1800], ["example", 1500], ["decoder", 2200], ["mask", 3600], ["cross", 3200], ["output", 2600], ["loop", 2600], ["final", 2600], ["explore", 900]]) await capture(id, ms, `mid-${id}.png`);
+  console.log("epilogue mid-animation");
+  for (const [id, ms] of [["p-vector", 2300], ["p-vector", 3450], ["p-matrix", 950], ["p-qkv", 1050], ["p-qkv", 4700], ["p-heads", 2400], ["p-heads", 4900], ["p-uses", 1200], ["p-uses", 3450]])
+    await capture(id, ms, `mid-${id}-${ms}.png`);
   await evaluate("__demo.toggleCalc()"); await sleep(100); await idle();
   for (const [id, ms] of [["dot", 5600], ["softmax", 2600], ["product", 4300], ["head2", 2600], ["wo", 2400], ["residual", 3600], ["ffn", 4500], ["mask", 3600], ["output", 2600]]) await capture(id, ms, `mid-${id}-3dp.png`);
   await shot("1920x1080", "product-3dp-end.png");
@@ -337,6 +340,41 @@ try {
   await at("final");
   if (!(await evaluate(`[...document.querySelectorAll("#stage text")].some((t) => t.textContent === "Everything we just calculated lives here." && Number(t.closest("g").style.opacity) > 0.9)`))) fail("Scene 10: the final caption is missing");
 
+  // ---------------------------------------------------------------- epilogue (paper scale): compressed, honest, bound to the engine
+  console.log("epilogue content");
+  const shownText = (needle) => evaluate(`[...document.querySelectorAll("#stage text")].some((t) => {
+    if (!t.textContent.includes(${JSON.stringify(needle)})) return false;
+    let o = 1; for (let n = t; n && n.id !== "stage"; n = n.parentNode) { if (!n.style) continue; if (n.style.visibility === "hidden") return false; if (n.style.opacity !== "") o *= Number(n.style.opacity); }
+    return o > 0.5; })`);
+  for (const id of ["p-vector", "p-matrix", "p-qkv", "p-heads", "p-uses"]) {
+    await at(id);
+    if (!(await shownText("illustrative values, not trained weights"))) fail(`${id}: the paper-scale values must be labelled illustrative`);
+    if (await shownText("Tiny teaching model")) fail(`${id}: the tiny-model tag should give way to the paper-scale tag`);
+    if ((await evaluate("document.querySelector('#l-hud').textContent")).includes("/ 11")) fail(`${id}: the epilogue must not renumber the ten guided scenes`);
+  }
+  await at("p-vector");
+  if ((await shownSrc("/^X\\.4\\.\\d$/")).length !== 4) fail("epilogue: the toy x_it (its 4 numbers) should be shown");
+  const pv = await shownSrc("/^paper\\.X\\.4\\.\\d+$/");
+  if (pv.map(([s]) => s.split(".").pop()).join() !== "0,1,2,511") fail(`epilogue: paper-scale x_it should show entries 1, 2, 3 and 512, got ${JSON.stringify(pv)}`);
+  for (const t of ["Same computation — larger vectors.", "illustrative values — not trained weights", "PAPER", "DEMO"]) if (!(await shownText(t))) fail(`epilogue: "${t}" should be on screen`);
+  await at("p-matrix");
+  const px = await shownSrc("/^paper\\.X\\.\\d\\.\\d+$/");
+  if (px.length !== 32) fail(`epilogue: X ∈ R^{8×512} should show 4 entries of each of its 8 rows, got ${px.length}`);
+  if (!(await shownText("8×512"))) fail("epilogue: X must be labelled 8×512");
+  await at("p-qkv");
+  if ((await shownSrc("/^paper\\.heads\\.0\\.Q\\.4\\.\\d+$/")).map(([s]) => s.split(".").pop()).join() !== "0,1,63") fail("epilogue: q_it should show entries 1, 2 and 64");
+  for (const t of ["512×64", "8×64"]) if (!(await shownText(t))) fail(`epilogue: projection shapes should show ${t}`);
+  await at("p-heads");
+  for (const t of ["HEAD 8", "Concat(head", "512×512", "√64"]) if (!(await shownText(t))) fail(`epilogue: eight heads → Concat → W^O should show "${t}"`);
+  await at("p-uses");
+  const g = await evaluate("__demo.snapshot()");
+  for (const id of ["enc:mhsa", "dec:mm", "dec:cross"]) if (!(g[id] && g[id].glow > 0.9)) fail(`epilogue: ${id} should be lit as one of the three uses of attention`);
+  for (const t of ["The math did not change.", "per head", "ENCODER–DECODER ATTENTION"]) if (!(await shownText(t))) fail(`epilogue: "${t}" should be on screen`);
+  // Next at the end of the epilogue enters Explore
+  await evaluate("__demo.next()"); await idle();
+  if ((await evaluate("__demo.beats[__demo.index].id")) !== "explore") fail("Next at the end of the epilogue did not enter Explore");
+  await check("explore entered from the epilogue");
+
   // ---------------------------------------------------------------- Explore: every interaction recomputes, the audit stays clean
   console.log("explore");
   await evaluate("__demo.speed(4)");
@@ -361,7 +399,8 @@ try {
   await check("explore: after a click");
   // leaving Explore restores the guided scene exactly
   await evaluate("__demo.prev()"); await idle();
-  await check("back from explore to the final shot");
+  if ((await evaluate("__demo.beats[__demo.index].id")) !== "p-uses") fail("Previous from Explore should land on the epilogue's last beat");
+  await check("back from explore to the epilogue");
   await at("softmax");
   await check("guided softmax after exploring");
 
@@ -379,6 +418,8 @@ try {
   const fsMsg = await evaluate("document.getElementById('toast').textContent");
   if (!fsOn && !fsMsg.includes("Fullscreen")) fail("F neither entered fullscreen nor explained why not");
   await check(`fullscreen ${fsOn ? "on" : "unavailable"}`);
+  for (const id of ["p-vector", "p-heads", "p-uses"]) { await at(id); await check(`fullscreen ${fsOn ? "on" : "unavailable"}: ${id}`); }
+  await at("final");
   if (fsOn) { await fsKey(); if (await evaluate("!!document.fullscreenElement")) fail("F did not leave fullscreen"); }
 
   // ---------------------------------------------------------------- real keyboard input (presenter clickers send PageUp/PageDown)
