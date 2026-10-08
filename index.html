@@ -1,0 +1,1809 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Attention, Step by Step</title>
+<meta name="description" content="A guided, fully computed walkthrough of self-attention from Vaswani et al. (2017), using a tiny teaching model.">
+<style>
+/* =====================================================================================
+   STYLE — dark mathematical-explainer palette. Colour meaning is fixed across scenes:
+   cyan = Query, amber = Key, green = Value, violet = positional encoding,
+   pale blue-grey = neutral representations, muted red = masked.
+   ===================================================================================== */
+:root {
+  --bg0: #04060b;
+  --ink: #e8eef8;
+  --ink-dim: #9aa7bd;
+  --ink-faint: #5d6880;
+  --neutral: #cfd9eb;
+  --q: #4cc9f5;
+  --k: #f6a940;
+  --v: #55d8a0;
+  --pe: #ab8dfb;
+  --mask: #e0707a;
+  --wire: #9fb3d6;
+  --font-sans: "Inter", "Segoe UI", "Helvetica Neue", "DejaVu Sans", Arial, system-ui, sans-serif;
+  --font-serif: "STIX Two Text", "Cambria", "Latin Modern Roman", Georgia, "DejaVu Serif", "Times New Roman", serif;
+  --u: calc(100cqw / 1920); /* one viewBox unit, for HTML placed over the stage */
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg0); color: var(--ink); font-family: var(--font-sans); }
+body { background: radial-gradient(ellipse 85% 75% at 50% 42%, #0d1729 0%, #070c17 55%, #04060b 100%); }
+body.idle { cursor: none; }
+#frame { position: fixed; inset: 0; display: grid; place-items: center; }
+#stage-box { position: relative; width: min(100vw, calc(100vh * 16 / 9)); aspect-ratio: 16 / 9; container-type: inline-size; }
+#stage { position: absolute; inset: 0; width: 100%; height: 100%; display: block; overflow: visible; }
+#overlay { position: absolute; inset: 0; pointer-events: none; }
+#overlay > * { pointer-events: auto; }
+
+/* ---- SVG typography ---- */
+:where(#stage) text { fill: var(--ink); }
+.sans { font-family: var(--font-sans); }
+.serif { font-family: var(--font-serif); }
+.num { font-family: var(--font-sans); font-variant-numeric: tabular-nums; }
+.title-text { font-family: var(--font-sans); font-weight: 300; letter-spacing: 0.2em; }
+.hud-text { font-family: var(--font-sans); letter-spacing: 0.14em; fill: var(--ink-dim); }
+.tag-text { font-family: var(--font-sans); fill: var(--ink-faint); letter-spacing: 0.02em; }
+.caption { font-family: var(--font-serif); font-style: italic; fill: var(--ink-dim); }
+.muted { fill: var(--ink-dim); }
+.faint { fill: var(--ink-faint); }
+.token-text { font-family: var(--font-sans); fill: var(--ink); }
+
+/* ---- vectors & matrices ---- */
+.bracket { fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.v-neutral .bracket, .m-neutral .bracket { stroke: var(--neutral); }
+.v-neutral text { fill: var(--neutral); }
+.v-x .bracket { stroke: #c4bdf2; }
+.v-x text { fill: #e9eff9; }
+.v-pe .bracket { stroke: var(--pe); }
+.v-pe text { fill: var(--pe); }
+.v-q .bracket, .m-q .bracket { stroke: var(--q); }
+.v-q text { fill: var(--q); }
+.v-k .bracket, .m-k .bracket { stroke: var(--k); }
+.v-k text { fill: var(--k); }
+.v-v .bracket, .m-v .bracket { stroke: var(--v); }
+.v-v text { fill: var(--v); }
+.m-q text, .m-k text, .m-v text { fill: #d9e1ee; }
+.cell-hl { stroke-width: 1.2; }
+.hl-n { fill: rgba(207, 217, 235, 0.13); stroke: rgba(207, 217, 235, 0.55); }
+.hl-q { fill: rgba(76, 201, 245, 0.17); stroke: rgba(76, 201, 245, 0.85); }
+.hl-k { fill: rgba(246, 169, 64, 0.17); stroke: rgba(246, 169, 64, 0.85); }
+.hl-v { fill: rgba(85, 216, 160, 0.17); stroke: rgba(85, 216, 160, 0.85); }
+.hl-pe { fill: rgba(171, 141, 251, 0.2); stroke: rgba(171, 141, 251, 0.9); }
+.col-hl { fill: rgba(207, 217, 235, 0.05); stroke-width: 1.2; }
+.m-q .col-hl { stroke: rgba(76, 201, 245, 0.55); }
+.m-k .col-hl { stroke: rgba(246, 169, 64, 0.55); }
+.m-v .col-hl { stroke: rgba(85, 216, 160, 0.55); }
+
+/* ---- wires, waves, nodes ---- */
+.wire { fill: none; stroke-width: 1.7; stroke-linecap: round; }
+.wire-glow { fill: none; stroke-width: 7; stroke-linecap: round; opacity: 0.13; }
+.s-q { stroke: var(--q); } .s-k { stroke: var(--k); } .s-v { stroke: var(--v); }
+.s-pe { stroke: var(--pe); } .s-n { stroke: var(--wire); }
+.f-q { fill: var(--q); } .f-k { fill: var(--k); } .f-v { fill: var(--v); } .f-pe { fill: var(--pe); } .f-n { fill: var(--neutral); }
+.arc { fill: none; stroke: var(--wire); stroke-width: 1.3; }
+.lane-axis { stroke: rgba(171, 141, 251, 0.18); stroke-width: 1; stroke-dasharray: 3 7; }
+.pill { fill: rgba(207, 217, 235, 0.035); stroke: rgba(207, 217, 235, 0.24); stroke-width: 1.2; }
+.rule { stroke: var(--ink-dim); stroke-width: 1.3; }
+.intu-pill { fill: none; stroke: var(--ink-faint); stroke-width: 1; }
+.lane-label text { fill: var(--pe); opacity: 0.9; }
+.intu-tag { font-family: var(--font-sans); fill: var(--ink-faint); letter-spacing: 0.16em; }
+
+/* ---- HTML chrome (sized in viewBox units via --u) ---- */
+#controls { position: absolute; left: 50%; bottom: calc(30 * var(--u)); transform: translateX(-50%); display: flex; align-items: center; gap: calc(10 * var(--u)); transition: opacity 0.5s; }
+#controls button { width: max(30px, calc(44 * var(--u))); height: max(30px, calc(44 * var(--u))); border-radius: 999px; border: 1px solid rgba(207, 217, 235, 0.16); background: rgba(8, 13, 25, 0.45); color: var(--ink-dim); display: grid; place-items: center; cursor: pointer; padding: 0; font: inherit; font-size: max(12px, calc(17 * var(--u))); line-height: 1; }
+#controls button.main { width: max(38px, calc(56 * var(--u))); height: max(38px, calc(56 * var(--u))); }
+#controls button.wide { width: auto; padding: 0 max(10px, calc(16 * var(--u))); letter-spacing: 0.08em; font-size: max(11px, calc(14 * var(--u))); }
+#controls button:hover:not([disabled]) { color: var(--ink); border-color: rgba(207, 217, 235, 0.45); }
+#controls button:focus-visible, #timeline button:focus-visible, .chip-btn:focus-visible { outline: 2px solid var(--q); outline-offset: 2px; }
+#controls button[disabled] { opacity: 0.28; cursor: default; }
+#controls button[aria-pressed="true"] { color: var(--q); border-color: rgba(76, 201, 245, 0.6); }
+#controls .sep { width: calc(14 * var(--u)); }
+#controls svg { width: 44%; height: 44%; fill: currentColor; }
+body.idle #controls, body.idle #timeline { opacity: 0.12; }
+#timeline { position: absolute; left: 7%; right: 7%; bottom: calc(5 * var(--u)); display: flex; justify-content: space-between; align-items: center; transition: opacity 0.5s; }
+#timeline::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 1px; background: rgba(207, 217, 235, 0.08); z-index: -1; }
+#timeline button { background: rgba(4, 6, 11, 0.9); border: 0; color: var(--ink-faint); font: inherit; font-size: max(9px, calc(12 * var(--u))); letter-spacing: 0.12em; text-transform: uppercase; cursor: pointer; padding: 2px 6px; border-radius: 4px; }
+#timeline button.past { color: var(--ink-dim); }
+#timeline button.current { color: var(--ink); }
+#timeline button.todo { opacity: 0.32; cursor: default; }
+.chip-btn { position: absolute; border: 1px solid rgba(171, 141, 251, 0.35); background: rgba(8, 13, 25, 0.6); color: var(--pe); border-radius: 999px; font: inherit; font-size: max(11px, calc(15 * var(--u))); letter-spacing: 0.06em; padding: max(4px, calc(6 * var(--u))) max(10px, calc(14 * var(--u))); cursor: pointer; transition: opacity 0.4s; }
+.chip-btn[hidden] { display: none; }
+#pe-math-btn { left: calc(44 * var(--u)); top: calc(962 * var(--u)); }
+#pe-math { position: absolute; left: calc(44 * var(--u)); bottom: calc(130 * var(--u)); background: rgba(8, 12, 24, 0.94); border: 1px solid rgba(171, 141, 251, 0.35); border-radius: 10px; padding: calc(16 * var(--u)) calc(22 * var(--u)); font-family: var(--font-serif); font-size: max(13px, calc(24 * var(--u))); color: var(--ink); line-height: 1.6; }
+#pe-math[hidden] { display: none; }
+#pe-math .note { font-family: var(--font-sans); font-size: 0.62em; color: var(--ink-dim); margin-top: 0.4em; letter-spacing: 0.02em; }
+#pe-math i { color: var(--pe); }
+
+/* ---- panels ---- */
+.panel { position: fixed; z-index: 10; background: rgba(7, 11, 21, 0.95); border: 1px solid rgba(207, 217, 235, 0.14); border-radius: 12px; color: var(--ink); font-size: 14px; line-height: 1.5; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5); }
+.panel[hidden] { display: none; }
+.panel h2 { font-size: 12px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-dim); margin: 0 0 8px; font-weight: 600; }
+#notes { left: 16px; bottom: 16px; width: min(440px, 40vw); padding: 14px 16px; }
+#notes p { margin: 0 0 6px; }
+#debug { top: 12px; right: 12px; bottom: 12px; width: min(560px, 46vw); padding: 14px 16px; overflow: auto; font-family: ui-monospace, "DejaVu Sans Mono", Menlo, Consolas, monospace; font-size: 12px; }
+#debug table { border-collapse: collapse; margin: 4px 0 12px; }
+#debug td, #debug th { padding: 1px 8px; text-align: right; color: var(--ink-dim); font-weight: 400; }
+#debug th { color: var(--ink-faint); }
+#debug .ok { color: var(--v); } #debug .bad { color: var(--mask); }
+#debug button { font: inherit; background: none; color: var(--q); border: 1px solid rgba(76, 201, 245, 0.4); border-radius: 6px; padding: 2px 8px; cursor: pointer; }
+#about { left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(620px, 92vw); max-height: 88vh; overflow: auto; padding: 22px 26px; }
+#about p { margin: 0 0 10px; color: var(--ink-dim); }
+#about .lead { color: var(--ink); }
+#about dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; margin: 10px 0 14px; color: var(--ink-dim); }
+#about dt { color: var(--ink); font-family: ui-monospace, monospace; }
+#about dd { margin: 0; }
+#about .edit { white-space: pre-wrap; color: var(--ink); border-left: 2px solid var(--ink-faint); padding-left: 10px; }
+#about button { font: inherit; background: none; color: var(--ink); border: 1px solid rgba(207, 217, 235, 0.3); border-radius: 8px; padding: 6px 14px; cursor: pointer; }
+#about label { color: var(--ink-dim); display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }
+#toast { position: fixed; top: 14px; left: 50%; transform: translateX(-50%); z-index: 20; background: rgba(7, 11, 21, 0.95); border: 1px solid rgba(207, 217, 235, 0.18); border-radius: 999px; padding: 6px 16px; font-size: 13px; color: var(--ink-dim); opacity: 0; transition: opacity 0.3s; pointer-events: none; }
+#toast.show { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { #controls, #timeline, #toast { transition: none; } }
+</style>
+</head>
+<body>
+<div id="frame">
+  <div id="stage-box">
+    <svg id="stage" viewBox="0 0 1920 1080" preserveAspectRatio="xMidYMid meet" role="img" aria-labelledby="stage-title stage-desc">
+      <title id="stage-title">Self-attention, computed step by step</title>
+      <desc id="stage-desc">An animated walkthrough of how one token's representation is built and projected into query, key and value vectors.</desc>
+      <defs>
+        <radialGradient id="g-node"><stop offset="0" stop-color="#cfd9eb" stop-opacity="0.5"/><stop offset="1" stop-color="#cfd9eb" stop-opacity="0"/></radialGradient>
+        <radialGradient id="g-pe"><stop offset="0" stop-color="#ab8dfb" stop-opacity="0.55"/><stop offset="1" stop-color="#ab8dfb" stop-opacity="0"/></radialGradient>
+        <radialGradient id="g-q"><stop offset="0" stop-color="#4cc9f5" stop-opacity="0.6"/><stop offset="1" stop-color="#4cc9f5" stop-opacity="0"/></radialGradient>
+        <radialGradient id="g-k"><stop offset="0" stop-color="#f6a940" stop-opacity="0.6"/><stop offset="1" stop-color="#f6a940" stop-opacity="0"/></radialGradient>
+        <radialGradient id="g-v"><stop offset="0" stop-color="#55d8a0" stop-opacity="0.6"/><stop offset="1" stop-color="#55d8a0" stop-opacity="0"/></radialGradient>
+      </defs>
+      <g id="cam"><g id="l-back"></g><g id="l-main"></g><g id="l-fx"></g></g>
+      <g id="l-hud"></g>
+    </svg>
+    <div id="overlay">
+      <button id="pe-math-btn" class="chip-btn" type="button" aria-expanded="false" aria-controls="pe-math" hidden>PE formula</button>
+      <div id="pe-math" hidden>
+        <div><i>PE</i>(<i>pos</i>, 2<i>i</i>) = sin(<i>pos</i> / 10000<sup>2<i>i</i>/<i>d</i><sub>model</sub></sup>)</div>
+        <div><i>PE</i>(<i>pos</i>, 2<i>i</i>+1) = cos(<i>pos</i> / 10000<sup>2<i>i</i>/<i>d</i><sub>model</sub></sup>)</div>
+        <div class="note">Vaswani et al. 2017, §3.5 · here d<sub>model</sub> = 4, so the two frequencies are 1 and 1/100</div>
+      </div>
+      <div id="controls" role="toolbar" aria-label="Presentation controls">
+        <button id="btn-prev" class="main" type="button" aria-label="Previous step (Left arrow)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.5 4.5 8 12l7.5 7.5-1.6 1.6L4.8 12l9.1-9.1z"/></svg></button>
+        <button id="btn-play" class="main" type="button" aria-label="Play (Space)"><svg viewBox="0 0 24 24" aria-hidden="true"><path id="play-icon" d="M7 4.5v15l12-7.5z"/></svg></button>
+        <button id="btn-next" class="main" type="button" aria-label="Next step (Right arrow)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8.5 4.5 16 12l-7.5 7.5 1.6 1.6 9.1-9.1-9.1-9.1z"/></svg></button>
+        <span class="sep"></span>
+        <button id="btn-calc" type="button" aria-pressed="false" aria-label="Show calculation (C)" title="Show calculation (C)">Σ</button>
+        <button id="btn-restart" type="button" aria-label="Restart (R)" title="Restart (R)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5a7 7 0 1 1-6.6 4.7l2 .7A4.9 4.9 0 1 0 12 7.1V10L7.5 6 12 2z"/></svg></button>
+        <button id="btn-explore" class="wide" type="button" aria-label="Explore mode (E)" title="Explore mode (E)" disabled>EXPLORE</button>
+        <button id="btn-full" type="button" aria-label="Fullscreen (F)" title="Fullscreen (F)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h6v2H6v4H4zm10 0h6v6h-2V6h-4zM4 14h2v4h4v2H4zm14 0h2v6h-6v-2h4z"/></svg></button>
+        <button id="btn-about" type="button" aria-label="About this demo" title="About this demo">i</button>
+      </div>
+      <nav id="timeline" aria-label="Scenes"></nav>
+    </div>
+  </div>
+</div>
+
+<aside id="notes" class="panel" hidden aria-label="Presenter notes"></aside>
+<aside id="debug" class="panel" hidden aria-label="Debug and verification"></aside>
+<div id="about" class="panel" role="dialog" aria-modal="true" aria-labelledby="about-title" hidden></div>
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script id="engine">
+/* =====================================================================================
+   NUMERICAL ENGINE — CONFIG · DEMO DATA · MATH UTILITIES · TRANSFORMER CALCULATIONS
+   Pure functions, no DOM. tests/engine.test.mjs loads this exact <script> in Node.
+   Conventions follow Vaswani et al. (2017):
+     · row vectors and projections x·W  (W_Q, W_K ∈ R^{d_model×d_k}, W_V ∈ R^{d_model×d_v})
+     · no biases on W_Q, W_K, W_V, W_O (none in the paper's equations)
+     · Attention(Q,K,V) = softmax(QKᵀ/√d_k)V, masking sets logits to −∞ before softmax (§3.2.3)
+     · post-LN residual blocks: LayerNorm(x + Sublayer(x))  (§3.1)
+     · FFN(x) = max(0, xW1 + b1)W2 + b2  (§3.3)
+     · sinusoidal positional encoding exactly as in §3.5 (interleaved sin/cos), positions 0-indexed
+   ===================================================================================== */
+(function (global) {
+  "use strict";
+
+  const deepFreeze = (o) => {
+    Object.values(o).forEach((v) => { if (v && typeof v === "object") deepFreeze(v); });
+    return Object.freeze(o);
+  };
+
+  // ---------------------------------------------------------------------------- CONFIG
+  const CONFIG = deepFreeze({
+    dModel: 4, nHeads: 2, dK: 2, dV: 2, dFF: 8, lnEps: 1e-6,
+    paper: { dModel: 512, nHeads: 8, dK: 64, dV: 64, dFF: 2048, layers: 6 },
+  });
+
+  // ---------------------------------------------------------------------------- DEMO DATA
+  // Pedagogical toy parameters chosen for interpretability; not learned weights.
+  // M1 revision 2 — approved and locked (tests/fixtures/m1-locked.json guards every number).
+  //
+  //  · Embeddings are ALREADY multiplied by √d_model (paper §3.4 scales embedding weights by
+  //    √d_model before adding positional encodings), so the engine adds PE to them directly.
+  //  · Lookup is case-insensitive ("The" and "the" share one vector): a deliberate pedagogical
+  //    choice, not a claim about real tokenizers or trained models.
+  //  · One table serves encoder and decoder tokens, like the paper's shared source/target
+  //    embeddings (§3.4).
+  //  · Design intent (not learned): PE adds a fast sin/cos pair to d0–d1 and an almost constant
+  //    ≈[0.0x, 1.0] to d2–d3. Head 1 reads mainly d2–d3 (word content). Head 2's W_Q block on d0–d1,
+  //    [[0.8, 1.2], [−1.2, 0.8]] = 1.44·R(0.98 rad), with an identity W_K block, makes the
+  //    positional part of q_i·k_j equal 1.44·cos(i − j − 0.98): about one position back
+  //    (paper §3.5: PE_{pos+k} is a linear function of PE_pos).
+  //  · Final 0.1-steps were chosen so every highlighted on-screen calculation reads exactly at
+  //    2 and 3 decimals. Computed values are never altered for display.
+  const PARAMS = deepFreeze({
+    embeddings: {
+      //           d0    d1    d2    d3
+      the:      [ 0.1,  0.4, -0.6, -0.4],
+      animal:   [-0.3,  0.2,  0.9,  0.8],
+      stopped:  [ 0.4,  0.1, -0.2,  0.2],
+      because:  [ 0.0, -0.1, -0.8, -0.2],
+      it:       [-0.5, -0.3,  0.6,  0.4],
+      was:      [ 0.1, -0.8, -0.4,  0.2],
+      tired:    [ 0.1, -0.6,  0.2,  0.7],
+      ".":      [-0.1,  0.7, -0.9, -0.7],
+      // Scene 10 decoder example (French output side)
+      "<start>":[ 0.2,  0.2, -0.3,  0.1],
+      "l'":     [ 0.3, -0.3, -0.7, -0.2],
+      est:      [ 0.1, -0.7, -0.4,  0.3],
+      "fatigué":[ 0.1, -0.6,  0.2,  0.7],
+    },
+    heads: [
+      { // Head 1 — content-weighted
+        WQ: [[0.1, -0.1], [0.0, 0.2], [1.0, -0.2], [0.2, 0.4]],
+        WK: [[0.1, -0.1], [0.1, 0.1], [1.2, 0.4], [0.1, 0.8]],
+        WV: [[0.4, -0.3], [0.3, 0.4], [0.7, 0.1], [-0.1, 0.7]],
+      },
+      { // Head 2 — position-weighted (rotation block on d0–d1)
+        WQ: [[0.8, 1.2], [-1.2, 0.8], [0.1, 0.0], [0.2, 0.0]],
+        WK: [[1.0, 0.0], [0.0, 1.0], [0.1, -0.1], [0.0, 0.1]],
+        WV: [[0.2, 0.3], [-0.3, 0.5], [0.2, -0.4], [0.4, 0.2]],
+      },
+    ],
+    // Output projection W_O ∈ R^{(h·d_v)×d_model} = 4×4
+    WO: [
+      [0.5, -0.1, 0.3, -0.1],
+      [0.2, 0.6, -0.2, 0.1],
+      [-0.3, 0.1, 0.7, 0.2],
+      [0.1, 0.4, 0.2, 0.5],
+    ],
+    // FFN 4 → 8 → 4 (paper: 512 → 2048 → 512)
+    W1: [
+      [0.4, -0.1, 0.3, -0.1, 0.0, -0.6, 0.0, 0.3],
+      [0.4, -0.3, -0.3, 0.0, -0.3, 0.2, 0.3, 0.0],
+      [0.2, 0.2, -0.2, 0.1, -0.1, -0.2, -0.1, -0.2],
+      [0.6, -0.6, 0.3, -0.2, -0.4, 0.1, 0.4, -0.4],
+    ],
+    b1: [0.2, -0.2, 0.2, -0.2, 0.0, 0.0, -0.1, 0.2],
+    W2: [
+      [-0.1, 0.2, -0.2, -0.3],
+      [0.0, -0.6, 0.5, 0.6],
+      [-0.4, -0.3, 0.5, 0.0],
+      [0.4, -0.4, 0.4, -0.6],
+      [-0.3, -0.3, -0.3, -0.8],
+      [0.3, -0.8, 0.0, 0.7],
+      [0.5, 0.3, 0.1, 0.7],
+      [0.4, 0.8, -0.4, -0.5],
+    ],
+    b2: [0.0, 0.1, 0.2, 0.2],
+    // Scene 10: toy decoder masked self-attention (one head, its own weights, illustrative)
+    decoder: {
+      inputs: ["<START>", "L'", "animal", "est"], // previously generated outputs, shifted right
+      next: "fatigué",
+      WQ: [[0.0, -0.3], [-0.2, -0.4], [0.8, -0.2], [0.0, 0.2]],
+      WK: [[-0.2, 0.0], [0.0, -0.2], [0.9, 0.5], [0.1, 0.1]],
+      // ILLUSTRATIVE next-token logits — not produced by a trained model; the engine applies softmax.
+      nextTokenLogits: { "fatigué": 2.6, content: 1.1, grand: 0.5, petit: 0.2, malade: 0.0, ".": -0.3 },
+    },
+  });
+
+  const GUIDED = deepFreeze({ sentence: "The animal stopped because it was tired.", focus: "it", featuredKey: "animal" });
+  const TRANSLATION = deepFreeze({
+    source: ["The", "animal", "is", "tired", "."],
+    target: ["L'", "animal", "est", "fatigué", "."],
+  });
+
+  // ---------------------------------------------------------------------------- MATH UTILITIES
+  // Element-wise products and their left-to-right sum: what the screen shows as (a1×b1) + (a2×b2) = s.
+  function dotTrace(a, b) {
+    if (a.length !== b.length) throw new Error(`dot: length ${a.length} vs ${b.length}`);
+    const terms = a.map((ai, i) => ai * b[i]);
+    let sum = 0;
+    for (const t of terms) sum += t;
+    return { terms, sum };
+  }
+  const dot = (a, b) => dotTrace(a, b).sum;
+
+  function vectorAdd(a, b) {
+    if (a.length !== b.length) throw new Error(`vectorAdd: length ${a.length} vs ${b.length}`);
+    return a.map((ai, i) => ai + b[i]);
+  }
+  const vectorScale = (a, s) => a.map((ai) => ai * s);
+
+  // Row vector (1×n) times matrix (n×m) → (1×m), keeping every column's products.
+  function matVecTrace(v, M) {
+    if (v.length !== M.length) throw new Error(`matVecMul: vector ${v.length} vs matrix rows ${M.length}`);
+    const columns = [];
+    for (let c = 0; c < M[0].length; c++) columns.push(dotTrace(v, M.map((row) => row[c])));
+    return { columns, out: columns.map((t) => t.sum) };
+  }
+  const matVecMul = (v, M) => matVecTrace(v, M).out;
+  const matMul = (A, B) => A.map((row) => matVecMul(row, B));
+  const transpose = (A) => A[0].map((_, c) => A.map((row) => row[c]));
+  const relu = (v) => v.map((x) => Math.max(0, x));
+  const concat = (...vs) => vs.flat();
+
+  // Softmax that keeps the exponentials and the denominator it used. Logits here are small, so
+  // exp() is applied directly and the displayed e^{s} are exactly the values used; max-subtraction
+  // is applied only if a logit could overflow. exp(−∞) = 0 implements masking.
+  function softmaxTrace(logits) {
+    const finite = logits.filter(Number.isFinite);
+    const max = Math.max(...finite);
+    const shift = max > 50 ? max : 0;
+    const exps = logits.map((x) => Math.exp(x - shift));
+    let sum = 0;
+    for (const e of exps) sum += e;
+    return { shift, exps, sum, probs: exps.map((e) => e / sum) };
+  }
+  const softmax = (logits) => softmaxTrace(logits).probs;
+
+  // Layer normalization (Ba et al. 2016) with unit gain, zero bias. One argument only, so it is
+  // safe to pass to Array.map (which would otherwise feed the index in as epsilon).
+  function layerNormTrace(x) {
+    const eps = CONFIG.lnEps;
+    let mean = 0;
+    for (const v of x) mean += v;
+    mean /= x.length;
+    let variance = 0;
+    for (const v of x) variance += (v - mean) * (v - mean);
+    variance /= x.length;
+    const denom = Math.sqrt(variance + eps);
+    return { mean, variance, denom, out: x.map((v) => (v - mean) / denom) };
+  }
+  const layerNorm = (x) => layerNormTrace(x).out;
+
+  // PE(pos, 2i) = sin(pos / 10000^(2i/d_model)),  PE(pos, 2i+1) = cos(pos / 10000^(2i/d_model))
+  function positionalEncoding(pos, dModel = CONFIG.dModel) {
+    const pe = new Array(dModel);
+    for (let i = 0; i < dModel / 2; i++) {
+      const angle = pos / Math.pow(10000, (2 * i) / dModel);
+      pe[2 * i] = Math.sin(angle);
+      pe[2 * i + 1] = Math.cos(angle);
+    }
+    return pe;
+  }
+
+  // ---------------------------------------------------------------------------- TRANSFORMER CALCULATIONS
+  // softmax(QKᵀ / scale) V with every intermediate kept. scale = √d_k (paper); other values only
+  // for the what-if experiment. mask[i][j] === false → logit −∞.
+  function scaledDotProductAttention(Q, K, V, dK, { scale = Math.sqrt(dK), mask = null } = {}) {
+    const scoreTraces = Q.map((q) => K.map((k) => dotTrace(q, k)));
+    const raw = scoreTraces.map((row) => row.map((t) => t.sum));
+    const scaled = raw.map((row, i) => row.map((s, j) => (mask && !mask[i][j] ? -Infinity : s / scale)));
+    const soft = scaled.map((row) => softmaxTrace(row));
+    const A = soft.map((t) => t.probs);
+    const weighted = A.map((row) => row.map((a, j) => vectorScale(V[j], a)));
+    // running sums in key order — the accumulation the screen animates
+    const partials = weighted.map((ws) => {
+      const acc = [];
+      let s = new Array(V[0].length).fill(0);
+      for (const w of ws) { s = vectorAdd(s, w); acc.push(s); }
+      return acc;
+    });
+    const Z = partials.map((p) => p[p.length - 1]);
+    return { scoreTraces, raw, scaled, soft, A, weighted, partials, Z };
+  }
+
+  // Deterministic pseudo-embedding for words that are not in the toy table (sentence editor).
+  function fnv1a(str) {
+    let h = 0x811c9dc5;
+    for (const ch of str) { h ^= ch.codePointAt(0); h = Math.imul(h, 0x01000193) >>> 0; }
+    return h >>> 0;
+  }
+  function mulberry32(a) {
+    return () => {
+      a |= 0; a = (a + 0x6d2b79f5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  function embeddingFor(word) {
+    const key = word.toLowerCase();
+    const known = PARAMS.embeddings[key];
+    if (known) return { vector: known.slice(), known: true };
+    const rnd = mulberry32(fnv1a(key));
+    return { vector: Array.from({ length: CONFIG.dModel }, () => Math.round((rnd() * 1.8 - 0.9) * 10) / 10), known: false };
+  }
+
+  // Words (keeping internal apostrophes, e.g. "didn't") and single punctuation marks.
+  function tokenize(sentence) {
+    return sentence.match(/[\p{L}\p{N}]+(?:['’][\p{L}\p{N}]+)*|[^\s\p{L}\p{N}]/gu) ?? [];
+  }
+
+  // One encoder layer, every intermediate kept.
+  function computeModel(params, { tokens, positionOn = true, scale = Math.sqrt(CONFIG.dK) }) {
+    const lookups = tokens.map(embeddingFor);
+    const E = lookups.map((l) => l.vector);
+    const P = tokens.map((_, pos) => positionalEncoding(pos, CONFIG.dModel));
+    // input representation: embedding + positional encoding (§3.5)
+    const X = positionOn ? E.map((e, i) => vectorAdd(e, P[i])) : E.map((e) => e.slice());
+    const heads = params.heads.map((h) => {
+      // q = x·W_Q, k = x·W_K, v = x·W_V for every position (same matrices for every token)
+      const qT = X.map((x) => matVecTrace(x, h.WQ));
+      const kT = X.map((x) => matVecTrace(x, h.WK));
+      const vT = X.map((x) => matVecTrace(x, h.WV));
+      const Q = qT.map((t) => t.out), K = kT.map((t) => t.out), V = vT.map((t) => t.out);
+      return { qT, kT, vT, Q, K, V, ...scaledDotProductAttention(Q, K, V, CONFIG.dK, { scale }) };
+    });
+    // MultiHead = Concat(head_1, …, head_h)·W_O  (§3.2.2)
+    const Concat = X.map((_, i) => concat(...heads.map((h) => h.Z[i])));
+    const woT = Concat.map((c) => matVecTrace(c, params.WO));
+    const MH = woT.map((t) => t.out);
+    // Add & Norm, FFN, Add & Norm (post-LN, §3.1)
+    const R1 = X.map((x, i) => vectorAdd(x, MH[i]));
+    const LN1 = R1.map((r) => layerNormTrace(r));
+    const Hpre = LN1.map((t) => vectorAdd(matVecMul(t.out, params.W1), params.b1));
+    const Hid = Hpre.map((h) => relu(h));
+    const F = Hid.map((h) => vectorAdd(matVecMul(h, params.W2), params.b2));
+    const R2 = LN1.map((t, i) => vectorAdd(t.out, F[i]));
+    const LN2 = R2.map((r) => layerNormTrace(r));
+    return { tokens, known: lookups.map((l) => l.known), positionOn, scale, E, P, X, heads, Concat, woT, MH, R1, LN1, Hpre, Hid, F, R2, LN2 };
+  }
+
+  // Decoder masked self-attention grid for Scene 10 (toy decoder head).
+  function maskedDecoderGrid(tokens) {
+    const D = PARAMS.decoder;
+    const X = tokens.map((t, i) => vectorAdd(embeddingFor(t).vector, positionalEncoding(i, CONFIG.dModel)));
+    const Q = X.map((x) => matVecMul(x, D.WQ));
+    const K = X.map((x) => matVecMul(x, D.WK));
+    const scaled = Q.map((q) => K.map((k) => dot(q, k) / Math.sqrt(CONFIG.dK)));
+    // causal mask: position i may attend to j ≤ i; future logits become −∞ (§3.2.3)
+    const masked = scaled.map((row, i) => row.map((s, j) => (j <= i ? s : -Infinity)));
+    const soft = masked.map((row) => softmaxTrace(row));
+    return { tokens, X, Q, K, scaled, masked, soft, A: soft.map((s) => s.probs) };
+  }
+
+  // Illustrative next-token distribution (declared logits, real softmax).
+  function nextTokenDistribution() {
+    const vocab = Object.keys(PARAMS.decoder.nextTokenLogits);
+    const logits = vocab.map((w) => PARAMS.decoder.nextTokenLogits[w]);
+    return { vocab, logits, ...softmaxTrace(logits) };
+  }
+
+  // ---------------------------------------------------------------------------- DISPLAY HELPERS
+  // One rounding rule everywhere (half away from zero) so displayed digits and checks agree.
+  function roundUnits(x, p) { return Math.sign(x) * Math.round(Math.abs(x) * 10 ** p); }
+  function fmt(x, p = 2) {
+    if (x === -Infinity) return "−∞";
+    if (x === Infinity) return "∞";
+    if (!Number.isFinite(x)) return "NaN";
+    const u = roundUnits(x, p);
+    const s = (Math.abs(u) / 10 ** p).toFixed(p);
+    return u < 0 ? "−" + s : s;
+  }
+  // "=" when the displayed (rounded) terms add up exactly to the displayed total, "≈" otherwise.
+  function relationSign(terms, total, p) {
+    const shown = terms.reduce((s, t) => s + roundUnits(t, p), 0);
+    return shown === roundUnits(total, p) ? "=" : "≈";
+  }
+  // "=" when (displayed a) × (displayed b), rounded the way a viewer would, equals the displayed
+  // product; "≈" otherwise (including exact half-way ties, which a viewer could round either way).
+  function productSign(a, pa, b, pb, product, p) {
+    const A = roundUnits(a, pa), B = roundUnits(b, pb);
+    const prod = A * B; // exact integer in units of 10^-(pa+pb)
+    const div = 10 ** (pa + pb - p);
+    const mag = Math.abs(prod), q = Math.floor(mag / div), r = mag - q * div;
+    if (2 * r === div) return "≈";
+    const viewer = Math.sign(prod) * (2 * r > div ? q + 1 : q);
+    return viewer === roundUnits(product, p) ? "=" : "≈";
+  }
+
+  global.AttentionEngine = Object.freeze({
+    CONFIG, PARAMS, GUIDED, TRANSLATION,
+    dot, dotTrace, vectorAdd, vectorScale, matVecTrace, matVecMul, matMul, transpose, relu, concat,
+    softmax, softmaxTrace, layerNorm, layerNormTrace, positionalEncoding,
+    scaledDotProductAttention, computeModel, maskedDecoderGrid, nextTokenDistribution,
+    tokenize, embeddingFor, roundUnits, fmt, relationSign, productSign,
+  });
+})(globalThis);
+</script>
+
+<script id="app">
+/* =====================================================================================
+   PRESENTATION — runtime, persistent objects, Scenes 1–4 (M2)
+   Every number on screen is bound to an engine value (data-src) and checked by audit().
+   ===================================================================================== */
+(function () {
+  "use strict";
+  const E = globalThis.AttentionEngine;
+
+  // ---------------------------------------------------------------------------- DISCLOSURE (edit before submitting)
+  const DISCLOSURE = {
+    asked: "[EDIT ME]",
+    checked: "[EDIT ME]",
+  };
+
+  // ---------------------------------------------------------------------------- MODEL (single source of truth)
+  const TOKENS = E.tokenize(E.GUIDED.sentence);
+  const N = TOKENS.length;
+  const FOCUS = TOKENS.indexOf(E.GUIDED.focus);
+  const MODEL = E.computeModel(E.PARAMS, { tokens: TOKENS });
+  const SRC = { ...MODEL, params: E.PARAMS };
+  const val = (path) => path.split(".").reduce((o, k) => (o == null ? undefined : o[k]), SRC);
+
+  // ---------------------------------------------------------------------------- UI STATE
+  const ui = { showCalc: false, peMath: false, forceMotion: false };
+  const digits = () => (ui.showCalc ? 3 : 2);
+  const reduceMQ = window.matchMedia("(prefers-reduced-motion: reduce)");
+  let motion = 1; // 0 = reduced motion (instant transitions)
+  const updateMotion = () => { motion = reduceMQ.matches && !ui.forceMotion ? 0 : 1; };
+  updateMotion();
+
+  // ---------------------------------------------------------------------------- SVG HELPERS
+  const NS = "http://www.w3.org/2000/svg";
+  function svg(tag, attrs, parent) {
+    const el = document.createElementNS(NS, tag);
+    if (attrs) for (const k in attrs) el.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(el);
+    return el;
+  }
+  const r2 = (x) => Math.round(x * 100) / 100;
+  const LAYER = {};
+  function bindNum(el, path, d) {
+    el.dataset.src = path;
+    el.dataset.digits = String(d);
+    el.textContent = E.fmt(val(path), d);
+  }
+  // Tiny math markup: \i{x} italic, _{it} subscript, ^{T} superscript.
+  function renderRich(textEl, src, basePx) {
+    while (textEl.firstChild) textEl.firstChild.remove();
+    const re = /\\i\{([^}]*)\}|_\{([^}]*)\}|\^\{([^}]*)\}|([^\\_^]+)/g;
+    let shift = 0, m;
+    while ((m = re.exec(src))) {
+      let text, italic = false, target = 0, small = false;
+      if (m[1] !== undefined) { text = m[1]; italic = true; }
+      else if (m[2] !== undefined) { text = m[2]; target = 0.3 * basePx; small = true; }
+      else if (m[3] !== undefined) { text = m[3]; target = -0.42 * basePx; small = true; }
+      else text = m[4];
+      const ts = svg("tspan", {}, textEl);
+      if (italic) ts.setAttribute("font-style", "italic");
+      if (small) ts.setAttribute("font-size", (basePx * 0.66).toFixed(1));
+      if (target !== shift) { ts.setAttribute("dy", (target - shift).toFixed(1)); shift = target; }
+      ts.textContent = text;
+    }
+  }
+
+  // ---------------------------------------------------------------------------- ANIMATION CLOCK & TWEENS
+  // One requestAnimationFrame loop drives every tween; it stops when nothing is moving.
+  const clock = { now: 0, last: 0, raf: 0, frozen: false, speed: 1, tweens: new Set(), timers: new Set() };
+  const EASE = {
+    inOut: (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2),
+    out: (t) => 1 - Math.pow(1 - t, 3),
+    linear: (t) => t,
+  };
+  function loop(ts) {
+    const dt = Math.min(50, Math.max(0, ts - clock.last));
+    clock.last = ts;
+    if (!clock.frozen) clock.now += dt * clock.speed;
+    for (const tw of [...clock.tweens]) tw.step();
+    for (const tm of [...clock.timers]) if (clock.now >= tm.at) { clock.timers.delete(tm); tm.resolve(); }
+    clock.raf = (clock.tweens.size || clock.timers.size) && !clock.frozen ? requestAnimationFrame(loop) : 0;
+  }
+  function kick() {
+    if (!clock.raf && !clock.frozen) { clock.last = performance.now(); clock.raf = requestAnimationFrame(loop); }
+  }
+  function tween(obj, to, { dur = 600, delay = 0, ease = EASE.inOut } = {}) {
+    dur *= motion; delay *= motion;
+    for (const tw of clock.tweens) if (tw.obj === obj) for (const k in to) tw.keys.delete(k);
+    return new Promise((resolve) => {
+      const from = {};
+      for (const k in to) from[k] = obj[k];
+      const tw = {
+        obj, keys: new Set(Object.keys(to)), start: clock.now + delay,
+        step() {
+          if (!this.keys.size) return this.done();
+          if (clock.now < this.start) return;
+          const t = dur <= 0 ? 1 : Math.min(1, (clock.now - this.start) / dur);
+          const e = ease(t);
+          for (const k of this.keys) obj[k] = from[k] + (to[k] - from[k]) * e;
+          obj.apply();
+          if (t >= 1) this.done();
+        },
+        done() { clock.tweens.delete(this); resolve(); },
+        finish() { for (const k of this.keys) obj[k] = to[k]; obj.apply(); this.done(); },
+      };
+      if (dur <= 0 && delay <= 0) { tw.finish(); return; }
+      clock.tweens.add(tw);
+      kick();
+    });
+  }
+  function wait(ms) {
+    ms *= motion;
+    if (ms <= 0) return Promise.resolve();
+    return new Promise((resolve) => { clock.timers.add({ at: clock.now + ms, resolve }); kick(); });
+  }
+  function finishAll() {
+    for (const tw of [...clock.tweens]) tw.finish();
+    for (const tm of [...clock.timers]) { clock.timers.delete(tm); tm.resolve(); }
+  }
+  function freeze(on) {
+    clock.frozen = on;
+    if (on && clock.raf) { cancelAnimationFrame(clock.raf); clock.raf = 0; }
+    if (!on) kick();
+  }
+
+  // A Run is one beat's forward choreography. Skipping makes the rest instant; a newer run makes it dead.
+  class Run {
+    constructor(gen) { this.gen = gen; this.skip = false; this.owned = []; }
+    get dead() { return this.gen !== director.gen; }
+    set(obj, props) { if (this.dead) return; Object.assign(obj, props); obj.apply(); }
+    tween(obj, to, opts = {}) {
+      if (this.dead) return Promise.resolve();
+      if (this.skip) { Object.assign(obj, to); obj.apply(); return Promise.resolve(); }
+      return tween(obj, to, opts);
+    }
+    wait(ms) { return this.dead || this.skip ? Promise.resolve() : wait(ms); }
+    morph(id, target, opts = {}) {
+      const obj = typeof id === "string" ? REG.get(id) : id;
+      if (this.dead) return Promise.resolve();
+      return obj.morph(target, { ...opts, run: this });
+    }
+    // Transients belong to their run; one created after the run was superseded is removed at once.
+    own(obj) { if (this.dead) obj.el.remove(); else this.owned.push(obj); return obj; }
+    cleanup() { for (const o of this.owned) o.el.remove(); this.owned = []; }
+  }
+
+  // ---------------------------------------------------------------------------- PERSISTENT OBJECTS
+  const REG = new Map();
+  class Node2D {
+    constructor(id, layer, cls = "") {
+      this.id = id;
+      this.el = svg("g", cls ? { class: cls } : {}, layer);
+      this.x = 0; this.y = 0; this.s = 1; this.r = 0; this.o = 0;
+      if (id) REG.set(id, this);
+      this.apply();
+    }
+    set(props) { Object.assign(this, props); this.apply(); return this; }
+    apply() {
+      const o = Math.max(0, Math.min(1, this.o));
+      this.el.setAttribute("transform", `translate(${r2(this.x)} ${r2(this.y)})` + (this.r ? ` rotate(${r2(this.r)})` : "") + (this.s !== 1 ? ` scale(${this.s.toFixed(4)})` : ""));
+      this.el.style.opacity = o.toFixed(3);
+      this.el.style.visibility = o < 0.003 ? "hidden" : "visible";
+    }
+    // Move toward a target state. Objects that are currently invisible appear in place (they never
+    // slide in from a stale position); component-specific props are handled by morphExtra().
+    morph(t, { dur = 700, delay = 0, run = null, ease = EASE.inOut } = {}) {
+      if (run && run.dead) return Promise.resolve();
+      const instant = (run && run.skip) || dur <= 0;
+      if (instant) { dur = 0; delay = 0; }
+      const ps = [];
+      const appearing = this.o < 0.01 && (t.o ?? 0) > 0;
+      const base = {};
+      for (const k of ["x", "y", "s", "r", "o"]) if (t[k] !== undefined && t[k] !== this[k]) base[k] = t[k];
+      if (appearing) {
+        for (const k of ["x", "y", "s", "r"]) if (k in base) { this[k] = base[k]; delete base[k]; }
+        this.apply();
+      }
+      if (this.morphExtra) this.morphExtra(t, { dur, delay, appearing: appearing || dur === 0, ps });
+      if (Object.keys(base).length) {
+        if (dur === 0) { Object.assign(this, base); this.apply(); }
+        else ps.push(tween(this, base, { dur, delay, ease }));
+      }
+      return Promise.all(ps);
+    }
+  }
+
+  class TextObj extends Node2D {
+    constructor(id, layer, { text = "", rich = null, cls = "", size = 30, anchor = "middle", textCls = "" } = {}) {
+      super(id, layer, cls);
+      this.size = size;
+      this.t = svg("text", { "text-anchor": anchor, "font-size": size }, this.el);
+      if (textCls) this.t.setAttribute("class", textCls);
+      if (rich !== null) renderRich(this.t, rich, size); else this.t.textContent = text;
+    }
+    width() { return this.t.getComputedTextLength(); }
+  }
+
+  // A word with an optional "token" pill around it.
+  class TokenObj extends Node2D {
+    constructor(id, layer, word, size) {
+      super(id, layer, "token");
+      this.pill = 0;
+      this.pillEl = svg("rect", { class: "pill", rx: 12 }, this.el);
+      this.t = svg("text", { "text-anchor": "middle", "font-size": size, class: "token-text" }, this.el);
+      this.t.textContent = word;
+      this.size = size;
+    }
+    measure() {
+      const w = this.t.getComputedTextLength();
+      this.w = w;
+      Object.entries({ x: -w / 2 - 11, y: -this.size * 0.8, width: w + 22, height: this.size * 1.12 }).forEach(([k, v]) => this.pillEl.setAttribute(k, r2(v)));
+      return w;
+    }
+    apply() { super.apply(); if (this.pillEl) this.pillEl.style.opacity = this.pill.toFixed(3); }
+    morphExtra(t, { dur, delay, appearing, ps }) {
+      if (t.pill !== undefined && t.pill !== this.pill) {
+        if (appearing || !dur) { this.pill = t.pill; this.apply(); } else ps.push(tween(this, { pill: t.pill }, { dur, delay }));
+      }
+    }
+  }
+
+  class DotObj extends Node2D {
+    constructor(id, layer, { r = 5, cls = "f-n", glow = null } = {}) {
+      super(id, layer, "dot");
+      if (glow) svg("circle", { r: r * 3.2, fill: `url(#${glow})` }, this.el);
+      svg("circle", { r, class: cls }, this.el);
+    }
+  }
+
+  // Path with an animatable "draw" fraction (pathLength = 1 makes dash maths trivial).
+  class PathObj extends Node2D {
+    constructor(id, layer, { d, cls = "wire s-n", glowCls = null } = {}) {
+      super(id, layer, "path");
+      this.draw = 1;
+      if (glowCls) this.g = svg("path", { d, pathLength: 1, class: glowCls }, this.el);
+      this.p = svg("path", { d, pathLength: 1, class: cls }, this.el);
+    }
+    apply() {
+      super.apply();
+      if (!this.p) return;
+      const off = (1 - this.draw).toFixed(4);
+      for (const p of [this.p, this.g]) if (p) { p.style.strokeDasharray = "1 1"; p.style.strokeDashoffset = off; }
+    }
+    morphExtra(t, { dur, delay, appearing, ps }) {
+      if (t.draw !== undefined && t.draw !== this.draw) {
+        if (appearing || !dur) { this.draw = t.draw; this.apply(); } else ps.push(tween(this, { draw: t.draw }, { dur, delay }));
+      }
+    }
+    pointAt(f) { const len = this.p.getTotalLength(); return this.p.getPointAtLength(f * len); }
+  }
+
+  // Bracketed vector whose cells can move independently (column ↔ row morphs) and flip values.
+  class VectorObj extends Node2D {
+    constructor(id, layer, { n, cls = "v-neutral", size = 30, gap = 44, orient = "col", src = null, d = 2, cellW = null, hlCls = "hl-n" }) {
+      super(id, layer, `vec ${cls}`);
+      Object.assign(this, { n, size, gap, orient, cls, hlCls, src: null, d });
+      this.cellWFixed = cellW;
+      this.cellW = this.cellWFor(d);
+      this.bw = 0; this.bh = 0;
+      this.hlG = svg("g", {}, this.el);
+      this.brL = svg("path", { class: "bracket" }, this.el);
+      this.brR = svg("path", { class: "bracket" }, this.el);
+      const self = this;
+      this.cells = Array.from({ length: n }, (_, i) => {
+        const g = svg("g", {}, this.el);
+        const hl = svg("rect", { class: `cell-hl ${hlCls}`, rx: 7 }, this.hlG);
+        const t = svg("text", { class: "num", "text-anchor": "middle", "dominant-baseline": "central", "font-size": size }, g);
+        return {
+          i, g, hl, t, x: 0, y: 0, o: 1, h: 0,
+          apply() {
+            g.setAttribute("transform", `translate(${r2(this.x)} ${r2(this.y)})`);
+            g.style.opacity = Math.max(0, this.o).toFixed(3);
+            hl.setAttribute("x", r2(this.x - self.cellW / 2));
+            hl.setAttribute("y", r2(this.y - self.size * 0.72));
+            hl.setAttribute("width", r2(self.cellW));
+            hl.setAttribute("height", r2(self.size * 1.44));
+            hl.style.opacity = Math.max(0, this.h * this.o).toFixed(3);
+          },
+        };
+      });
+      const tg = this.shape(orient, gap);
+      this.cells.forEach((c, i) => { c.x = tg.cells[i].x; c.y = tg.cells[i].y; c.apply(); });
+      this.bw = tg.bw; this.bh = tg.bh;
+      if (src) this.bind(src, d);
+      this.apply();
+    }
+    shape(orient, gap) {
+      const mid = (this.n - 1) / 2;
+      return {
+        cells: this.cells.map((_, i) => (orient === "col" ? { x: 0, y: (i - mid) * gap } : { x: (i - mid) * gap, y: 0 })),
+        bw: orient === "col" ? this.cellW / 2 + 8 : Math.max((this.n * gap) / 2 + 4, ((this.n - 1) / 2) * gap + this.cellW / 2 + 6),
+        bh: orient === "col" ? (this.n * gap) / 2 + 2 : this.size * 0.82,
+      };
+    }
+    apply() {
+      super.apply();
+      if (!this.brL) return;
+      const w = this.bw, h = this.bh, lip = Math.min(9, w * 0.3);
+      this.brL.setAttribute("d", `M ${r2(-w + lip)} ${r2(-h)} H ${r2(-w)} V ${r2(h)} H ${r2(-w + lip)}`);
+      this.brR.setAttribute("d", `M ${r2(w - lip)} ${r2(-h)} H ${r2(w)} V ${r2(h)} H ${r2(w - lip)}`);
+    }
+    cellWFor(d) { return this.cellWFixed ?? this.size * (d >= 3 ? 3.3 : 2.75); }
+    bind(src, d) {
+      this.src = src; this.d = d;
+      const w = this.cellWFor(d);
+      if (w !== this.cellW) {
+        this.cellW = w;
+        if (this.orient === "col") this.bw = this.shape(this.orient, this.gap).bw;
+        this.apply();
+        this.cells.forEach((c) => c.apply());
+      }
+      this.cells.forEach((c, i) => bindNum(c.t, `${src}.${i}`, d));
+    }
+    setCls(cls) { this.el.setAttribute("class", `vec ${cls}`); this.cls = cls; }
+    setHlCls(hlCls) { this.hlCls = hlCls; this.cells.forEach((c) => c.hl.setAttribute("class", `cell-hl ${hlCls}`)); }
+    cellAbs(i) { const c = this.cells[i]; return { x: this.x + c.x * this.s, y: this.y + c.y * this.s }; }
+    morphExtra(t, { dur, delay, appearing, ps }) {
+      if (t.cls && t.cls !== this.cls) this.setCls(t.cls);
+      if (t.hlCls && t.hlCls !== this.hlCls) this.setHlCls(t.hlCls);
+      const orient = t.orient ?? this.orient, gap = t.gap ?? this.gap;
+      if (orient !== this.orient || gap !== this.gap || appearing) {
+        const tg = this.shape(orient, gap);
+        this.orient = orient; this.gap = gap;
+        if (appearing || !dur) {
+          this.cells.forEach((c, i) => { c.x = tg.cells[i].x; c.y = tg.cells[i].y; c.apply(); });
+          this.bw = tg.bw; this.bh = tg.bh; this.apply();
+        } else {
+          this.cells.forEach((c, i) => ps.push(tween(c, tg.cells[i], { dur, delay })));
+          ps.push(tween(this, { bw: tg.bw, bh: tg.bh }, { dur, delay }));
+        }
+      }
+      const src = t.src ?? this.src, d = t.d ?? this.d;
+      if (src && (src !== this.src || d !== this.d)) {
+        if (appearing || !dur) this.bind(src, d); else ps.push(this.flip(src, d, dur, delay));
+      }
+      // visible cells end fully opaque; highlights follow t.hl (number or per-cell array)
+      if ((t.o ?? 0) > 0) {
+        const hs = Array.isArray(t.hl) ? t.hl : this.cells.map(() => t.hl ?? 0);
+        this.cells.forEach((c, i) => {
+          const goal = { h: hs[i] };
+          if (!(src && src !== this.src)) goal.o = 1;
+          if (appearing || !dur) { Object.assign(c, goal); c.apply(); } else ps.push(tween(c, goal, { dur: Math.min(dur, 500), delay }));
+        });
+      }
+    }
+    async flip(src, d, dur, delay) {
+      const out = Math.min(240, dur * 0.35), inn = Math.min(360, dur * 0.5);
+      await Promise.all(this.cells.map((c) => tween(c, { o: 0 }, { dur: out, delay })));
+      this.bind(src, d);
+      await Promise.all(this.cells.map((c) => tween(c, { o: 1 }, { dur: inn })));
+    }
+  }
+
+  // Bracketed matrix with per-cell and per-column highlights.
+  class MatrixObj extends Node2D {
+    constructor(id, layer, { rows, cols, root, d = 1, size = 26, gx = 90, gy = 44, cls = "m-neutral", hlCls = "hl-n" }) {
+      super(id, layer, `mat ${cls}`);
+      Object.assign(this, { rows, cols, root, d, size, gx, gy });
+      this.cellW = size * 2.3;
+      const colG = svg("g", {}, this.el);
+      const hlG = svg("g", {}, this.el);
+      this.brL = svg("path", { class: "bracket" }, this.el);
+      this.brR = svg("path", { class: "bracket" }, this.el);
+      const cx = (c) => (c - (cols - 1) / 2) * gx, cy = (r) => (r - (rows - 1) / 2) * gy;
+      this.colHl = Array.from({ length: cols }, (_, c) => {
+        const rect = svg("rect", { class: "col-hl", rx: 10, x: r2(cx(c) - this.cellW / 2 - 4), y: r2(cy(0) - gy / 2 - 2), width: r2(this.cellW + 8), height: r2(rows * gy + 4) }, colG);
+        const o = { h: 0, apply() { rect.style.opacity = this.h.toFixed(3); } };
+        o.apply();
+        return o;
+      });
+      this.cells = [];
+      for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+        const hl = svg("rect", { class: `cell-hl ${hlCls}`, rx: 7, x: r2(cx(c) - this.cellW / 2), y: r2(cy(r) - size * 0.72), width: r2(this.cellW), height: r2(size * 1.44) }, hlG);
+        const t = svg("text", { class: "num", "text-anchor": "middle", "dominant-baseline": "central", "font-size": size, x: r2(cx(c)), y: r2(cy(r)) }, this.el);
+        bindNum(t, `${root}.${r}.${c}`, d);
+        const cell = { r, c, x: cx(c), y: cy(r), hl, t, h: 0, apply() { hl.style.opacity = this.h.toFixed(3); } };
+        cell.apply();
+        this.cells.push(cell);
+      }
+      this.bw = ((cols - 1) / 2) * gx + this.cellW / 2 + 9;
+      this.bh = (rows * gy) / 2 + 3;
+      this.apply();
+    }
+    cell(r, c) { return this.cells[r * this.cols + c]; }
+    apply() {
+      super.apply();
+      if (!this.brL) return;
+      const w = this.bw, h = this.bh;
+      this.brL.setAttribute("d", `M ${r2(-w + 9)} ${r2(-h)} H ${r2(-w)} V ${r2(h)} H ${r2(-w + 9)}`);
+      this.brR.setAttribute("d", `M ${r2(w - 9)} ${r2(-h)} H ${r2(w)} V ${r2(h)} H ${r2(w - 9)}`);
+    }
+    morphExtra(t, { dur, delay, appearing, ps }) {
+      if ((t.o ?? 0) > 0) {
+        const all = [...this.cells, ...this.colHl];
+        all.forEach((c) => { if (appearing || !dur) { c.h = 0; c.apply(); } else if (c.h) ps.push(tween(c, { h: 0 }, { dur: Math.min(dur, 400), delay })); });
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------------------- LAYOUT CONSTANTS
+  const Y = { tok: 190, node: 232, vec: 352, pe: 576, lane0: 752, laneGap: 58, amp: 20, row: 520, mat: 712, res: 848, eqn: 896, intu: 944, cap: 128 };
+  const BX = { q: 360, k: 960, v: 1560 };
+  const ROWY = { q: 286, k: 356, v: 426 };
+  const WLAB = { q: { dx: -20, anchor: "end" }, k: { dx: -20, anchor: "end" }, v: { dx: 20, anchor: "start" } };
+  const colX = (j) => 960 + (j - (N - 1) / 2) * 205;
+  const laneY = (d) => Y.lane0 + d * Y.laneGap;
+  const dotY = (j, d) => laneY(d) - Y.amp * MODEL.P[j][d];
+  const posX = (pos) => 960 + (pos - (N - 1) / 2) * 205; // continuous position → x (for the waves)
+  const WAVE = { from: -0.3, to: N - 0.7 };
+  // each lane label sits beside the start of its own curve
+  const laneLabelY = (d) => laneY(d) - Y.amp * E.positionalEncoding(WAVE.from, E.CONFIG.dModel)[d] + 6;
+  const DETX = { e: 650, plus: 790, p: 930, eq: 1075, x: 1220 }; // e + PE = x equation (Scene 3)
+  const TITLE = { big: { x: 960, y: 455, s: 1 }, hud: { x: 72, y: 60, s: 0.3 } };
+  let S1X = []; // sentence layout (Scene 1), measured at init
+  const BRANCHES = ["q", "k", "v"];
+  const BR = {
+    q: { W: "WQ", T: "qT", M: "Q", label: "Q", color: "q", intu: "What am I looking for?" },
+    k: { W: "WK", T: "kT", M: "K", label: "K", color: "k", intu: "What do I match?" },
+    v: { W: "WV", T: "vT", M: "V", label: "V", color: "v", intu: "What information can I contribute?" },
+  };
+
+  // ---------------------------------------------------------------------------- BUILD THE STAGE
+  const CAPTIONS = {
+    pairs: "Self-attention lets every position directly inspect every other position.",
+    vectors: "Words become vectors.",
+    waves: "Each position samples fixed sine and cosine waves.",
+    added: "Position is added.",
+    merged: "embedding + position = input representation",
+    follow: "Follow one token: “it”",
+    qkv: "One vector becomes Q, K and V.",
+    same: "Every token uses the same \\i{W}_{Q}, \\i{W}_{K}, \\i{W}_{V}.",
+  };
+  function build() {
+    const svgRoot = document.getElementById("stage");
+    LAYER.back = svgRoot.querySelector("#l-back");
+    LAYER.main = svgRoot.querySelector("#l-main");
+    LAYER.fx = svgRoot.querySelector("#l-fx");
+    LAYER.hud = svgRoot.querySelector("#l-hud");
+
+    // HUD
+    const title = new TextObj("title", LAYER.hud, { text: "ATTENTION IS ALL YOU NEED", size: 64, anchor: "start", textCls: "title-text" });
+    title.measure = () => { TITLE.big.x = 960 - title.width() / 2; };
+    new TextObj("tag", LAYER.hud, { text: "Tiny teaching model — dimensions reduced so every calculation can be shown", size: 16, anchor: "start", textCls: "tag-text" });
+    new TextObj("status", LAYER.hud, { text: "", size: 19, anchor: "end", textCls: "hud-text" });
+    new TextObj("question", LAYER.main, { text: "What happens to one token inside self-attention?", size: 34, textCls: "caption" });
+    for (const [k, text] of Object.entries(CAPTIONS)) new TextObj(`cap:${k}`, LAYER.hud, { rich: text, size: 32, textCls: "caption" });
+
+    // Scene 1–2: tokens, all-pairs arcs, nodes, embedding vectors
+    for (let j = 0; j < N; j++) new TokenObj(`tok:${j}`, LAYER.main, TOKENS[j], 48);
+    for (let j = 0; j < N; j++) new DotObj(`node:${j}`, LAYER.main, { r: 5.5, cls: "f-n", glow: "g-node" });
+    for (let j = 0; j < N; j++) new VectorObj(`vec:${j}`, LAYER.main, { n: 4, src: `E.${j}`, d: 2, cls: "v-neutral" });
+    new TextObj("ann:demo", LAYER.main, { rich: "Demo: \\i{d}_{model} = 4", size: 30, textCls: "serif" });
+    new TextObj("ann:paper", LAYER.main, { rich: "Paper: \\i{d}_{model} = 512", size: 24, textCls: "serif muted" });
+    new TextObj("ann:toy", LAYER.main, { text: "The mechanism is real Transformer attention. The small vectors and weights are illustrative teaching values, not weights from the original trained model.", size: 19, textCls: "tag-text" });
+
+    // Scene 3: positional-encoding waves, samples, PE vectors, the detailed sum for "it"
+    const laneNames = ["sin(\\i{pos})", "cos(\\i{pos})", "sin(\\i{pos}/100)", "cos(\\i{pos}/100)"];
+    for (let d = 0; d < 4; d++) {
+      const pts = [];
+      for (let p = WAVE.from; p <= WAVE.to + 1e-9; p += 0.05) {
+        const v = E.positionalEncoding(p, E.CONFIG.dModel)[d];
+        pts.push(`${r2(posX(p))} ${r2(laneY(d) - Y.amp * v)}`);
+      }
+      new PathObj(`axis:${d}`, LAYER.back, { d: `M ${r2(posX(WAVE.from))} ${laneY(d)} H ${r2(posX(WAVE.to))}`, cls: "lane-axis" });
+      new PathObj(`lane:${d}`, LAYER.back, { d: `M ${pts.join(" L ")}`, cls: "wire s-pe", glowCls: "wire-glow s-pe" });
+      new TextObj(`lanelab:${d}`, LAYER.back, { rich: laneNames[d], size: 19, anchor: "end", textCls: "serif" }).el.classList.add("lane-label");
+    }
+    for (let j = 0; j < N; j++) for (let d = 0; d < 4; d++) new DotObj(`dot:${j}:${d}`, LAYER.back, { r: 4.5, cls: "f-pe", glow: "g-pe" });
+    for (let j = 0; j < N; j++) {
+      new VectorObj(`pe:${j}`, LAYER.main, { n: 4, src: `P.${j}`, d: 2, cls: "v-pe", hlCls: "hl-pe" });
+      new TextObj(`plus:${j}`, LAYER.main, { text: "+", size: 30, textCls: "muted" });
+    }
+    new VectorObj("det:e", LAYER.main, { n: 4, size: 32, gap: 48, src: `E.${FOCUS}`, cls: "v-neutral" });
+    new VectorObj("det:p", LAYER.main, { n: 4, size: 32, gap: 48, src: `P.${FOCUS}`, cls: "v-pe", hlCls: "hl-pe" });
+    new VectorObj("det:x", LAYER.main, { n: 4, size: 32, gap: 48, src: `X.${FOCUS}`, cls: "v-x" });
+    new TextObj("det:plus", LAYER.main, { text: "+", size: 40, textCls: "muted" });
+    new TextObj("det:eq", LAYER.main, { text: "=", size: 40, textCls: "muted" });
+    new TextObj("det:le", LAYER.main, { text: "embedding", size: 22, textCls: "muted" });
+    new TextObj("det:lp", LAYER.main, { rich: "position  (\\i{pos} = 4)", size: 22, textCls: "serif" }).el.querySelector("text").classList.add("f-pe");
+    new TextObj("det:lx", LAYER.main, { text: "input representation", size: 22, textCls: "muted" });
+
+    // Scene 4: projections
+    new TextObj("xlab", LAYER.main, { rich: "\\i{x}_{it}", size: 38, anchor: "end", textCls: "serif" });
+    for (const b of BRANCHES) {
+      const B = BR[b];
+      const x0 = 960, y0 = Y.row + 34, x1 = BX[b], y1 = Y.mat - 100;
+      new PathObj(`wire:${b}`, LAYER.back, { d: `M ${x0} ${y0} C ${x0} ${y0 + 70}, ${x1} ${y1 - 80}, ${x1} ${y1}`, cls: `wire s-${B.color}`, glowCls: `wire-glow s-${B.color}` });
+      new MatrixObj(`W:${b}`, LAYER.main, { rows: 4, cols: 2, root: `params.heads.0.${B.W}`, d: 1, cls: `m-${B.color}`, hlCls: `hl-${B.color}` });
+      new TextObj(`Wlab:${b}`, LAYER.main, { rich: `\\i{W}_{${B.label}}`, size: 34, anchor: WLAB[b].anchor, textCls: `serif f-${B.color}` });
+      new VectorObj(`res:${b}`, LAYER.main, { n: 2, size: 28, gap: 90, orient: "row", src: `heads.0.${B.M}.${FOCUS}`, d: 2, cls: `v-${B.color}`, hlCls: `hl-${B.color}` });
+      new TextObj(`reslab:${b}`, LAYER.main, { rich: `\\i{${b}}_{it} =`, size: 30, anchor: "end", textCls: `serif f-${B.color}` });
+      new TextObj(`eqn:${b}`, LAYER.main, { rich: `\\i{x}_{it} \\i{W}_{${B.label}} = \\i{${b}}_{it}`, size: 24, textCls: "serif muted" });
+      const intu = new Node2D(`intu:${b}`, LAYER.main, "intu");
+      const tag = svg("text", { class: "intu-tag", "font-size": 13, "text-anchor": "middle", y: -24 }, intu.el);
+      tag.textContent = "INTUITION";
+      const q = svg("text", { class: "serif muted", "font-size": 23, "text-anchor": "middle", "font-style": "italic" }, intu.el);
+      q.textContent = `“${B.intu}”`;
+      for (let j = 0; j < N; j++) if (j !== FOCUS) new VectorObj(`chip:${b}:${j}`, LAYER.main, { n: 2, size: 24, gap: 77, orient: "row", src: `heads.0.${B.M}.${j}`, d: 2, cls: `v-${B.color}` });
+      new TextObj(`rowlab:${b}`, LAYER.main, { rich: `\\i{${B.label}}`, size: 34, anchor: "end", textCls: `serif f-${B.color}` });
+      new TextObj(`mateq:${b}`, LAYER.main, { rich: `\\i{${B.label}} = \\i{X W}_{${B.label}}`, size: 30, textCls: `serif f-${B.color}` });
+    }
+    // Scene 1 arcs (built after the sentence is measured)
+  }
+
+  function measure() {
+    REG.get("title").measure();
+    const widths = TOKENS.map((_, j) => REG.get(`tok:${j}`).measure());
+    const gaps = TOKENS.map((w, j) => (j === 0 ? 0 : TOKENS[j] === "." ? 28 : 34));
+    const total = widths.reduce((a, b) => a + b, 0) + gaps.reduce((a, b) => a + b, 0);
+    let x = 960 - total / 2;
+    S1X = widths.map((w, j) => { x += gaps[j]; const c = x + w / 2; x += w; return c; });
+    // all-pairs arcs above the sentence
+    let k = 0;
+    for (let i = 0; i < N; i++) for (let j = i + 1; j < N; j++) {
+      const xa = S1X[i], xb = S1X[j], y0 = 518, h = 34 + 0.2 * (xb - xa);
+      new PathObj(`arc:${i}:${j}`, LAYER.back, { d: `M ${r2(xa)} ${y0} C ${r2(xa)} ${r2(y0 - h)}, ${r2(xb)} ${r2(y0 - h)}, ${r2(xb)} ${y0}`, cls: "arc" }).order = k++;
+    }
+  }
+
+  // ---------------------------------------------------------------------------- LAYOUTS (end state of every beat)
+  class Layout extends Map {
+    put(id, t) { this.set(id, { ...(this.get(id) || {}), ...t }); return this; }
+    hide(id) { return this.put(id, { o: 0 }); }
+  }
+  const HUD = (L, { tag = true } = {}) => {
+    L.put("title", { ...TITLE.hud, o: 1 }).put("status", { x: 1848, y: 60, o: 1 });
+    if (tag) L.put("tag", { x: 72, y: 88, o: 1 });
+    return L;
+  };
+  const cap = (L, key) => L.put(`cap:${key}`, { x: 960, y: Y.cap, o: 1 });
+
+  function L1_title() {
+    return new Layout().put("title", { ...TITLE.big, o: 1 }).put("question", { x: 960, y: 540, o: 1 });
+  }
+  function L1_words() {
+    const L = HUD(new Layout(), { tag: false }).put("question", { x: 960, y: 336, o: 0.9 });
+    for (let j = 0; j < N; j++) L.put(`tok:${j}`, { x: S1X[j], y: 560, s: 1, o: 1, pill: 1 });
+    return L;
+  }
+  function L1_pairs() {
+    const L = L1_words().hide("question");
+    for (let i = 0; i < N; i++) for (let j = i + 1; j < N; j++) L.put(`arc:${i}:${j}`, { o: 0.75, draw: 1 });
+    return L.put("cap:pairs", { x: 960, y: 690, o: 1 });
+  }
+  function tokenRow(L, { dim = false } = {}) {
+    for (let j = 0; j < N; j++) {
+      const o = dim && j !== FOCUS ? 0.3 : 1;
+      L.put(`tok:${j}`, { x: colX(j), y: Y.tok, s: 0.72, o, pill: 0 }).put(`node:${j}`, { x: colX(j), y: Y.node, o });
+    }
+    return L;
+  }
+  function vectorCols(L, { src = "E", dim = false, skip = -1 } = {}) {
+    for (let j = 0; j < N; j++) {
+      if (j === skip) continue;
+      L.put(`vec:${j}`, { x: colX(j), y: Y.vec, s: 1, o: dim && j !== FOCUS ? 0.3 : 1, orient: "col", gap: 44, src: `${src}.${j}`, d: 2, cls: src === "X" ? "v-x" : "v-neutral" });
+    }
+    return L;
+  }
+  function L2_nodes() {
+    const L = tokenRow(HUD(new Layout()));
+    for (let j = 0; j < N; j++) L.put(`node:${j}`, { _delay: 350 + j * 70 });
+    return L;
+  }
+  function L2_vectors() {
+    const L = vectorCols(tokenRow(HUD(new Layout())));
+    cap(L, "vectors");
+    return L.put("ann:demo", { x: 960, y: 538, o: 1 }).put("ann:paper", { x: 960, y: 580, o: 1 }).put("ann:toy", { x: 960, y: 640, o: 1 });
+  }
+  function waves(L, { o = 1, dots = 1, labels = 1 } = {}) {
+    for (let d = 0; d < 4; d++) {
+      L.put(`lane:${d}`, { o, draw: 1 }).put(`axis:${d}`, { o: o * 0.9, draw: 1 }).put(`lanelab:${d}`, { x: posX(WAVE.from) - 10, y: laneLabelY(d), o: labels });
+      for (let j = 0; j < N; j++) if (dots > 0) L.put(`dot:${j}:${d}`, { x: colX(j), y: dotY(j, d), o: dots });
+    }
+    return L;
+  }
+  function L3_waves() {
+    const L = waves(vectorCols(tokenRow(HUD(new Layout()))));
+    return cap(L, "waves");
+  }
+  function peCols(L, { dim = false } = {}) {
+    for (let j = 0; j < N; j++) {
+      const o = dim && j !== FOCUS ? 0.3 : 1;
+      L.put(`pe:${j}`, { x: colX(j), y: Y.pe, s: 1, o, orient: "col", gap: 44, src: `P.${j}`, d: 2 })
+        .put(`plus:${j}`, { x: colX(j), y: (Y.vec + Y.pe) / 2 + 11, o: o * 0.9 });
+    }
+    return L;
+  }
+  function L3_rise() {
+    const L = peCols(waves(vectorCols(tokenRow(HUD(new Layout()))), { dots: 0.35 }));
+    return cap(L, "added");
+  }
+  function L3_detail() {
+    const d = digits();
+    const L = peCols(waves(vectorCols(tokenRow(HUD(new Layout()), { dim: true }), { dim: true }), { o: 0.12, dots: 0.1, labels: 0.25 }), { dim: true });
+    const yy = 812;
+    L.put("det:e", { x: DETX.e, y: yy, o: 1, src: `E.${FOCUS}`, d }).put("det:plus", { x: DETX.plus, y: yy + 14, o: 1 })
+      .put("det:p", { x: DETX.p, y: yy, o: 1, src: `P.${FOCUS}`, d }).put("det:eq", { x: DETX.eq, y: yy + 14, o: 1 })
+      .put("det:x", { x: DETX.x, y: yy, o: 1, src: `X.${FOCUS}`, d })
+      .put("det:le", { x: DETX.e, y: yy + 150, o: 1 }).put("det:lp", { x: DETX.p, y: yy + 150, o: 1 }).put("det:lx", { x: DETX.x, y: yy + 150, o: 1 });
+    return L;
+  }
+  function L3_merged() {
+    const L = waves(vectorCols(tokenRow(HUD(new Layout())), { src: "X" }), { o: 0.16, dots: 0, labels: 0.3 });
+    return cap(L, "merged");
+  }
+  function L4_lift() {
+    const L = vectorCols(tokenRow(HUD(new Layout()), { dim: true }), { src: "X", dim: true, skip: FOCUS });
+    L.put(`vec:${FOCUS}`, { x: 960, y: Y.row, s: 1.15, o: 1, orient: "row", gap: 112, src: `X.${FOCUS}`, d: 2, cls: "v-x" })
+      .put("xlab", { x: 960 - 2 * 112 * 1.15 - 40, y: Y.row + 13, o: 1 });
+    return cap(L, "follow");
+  }
+  function branches(L, which = BRANCHES) {
+    for (const b of which) {
+      L.put(`wire:${b}`, { o: 1, draw: 1 }).put(`W:${b}`, { x: BX[b], y: Y.mat, o: 1 }).put(`Wlab:${b}`, { x: BX[b] + WLAB[b].dx, y: Y.mat - 104, o: 1 });
+    }
+    return L;
+  }
+  function results(L, which, d = 2) {
+    for (const b of which) {
+      L.put(`res:${b}`, { x: BX[b], y: Y.res, s: 1, o: 1, orient: "row", gap: 90, src: `heads.0.${BR[b].M}.${FOCUS}`, d })
+        .put(`reslab:${b}`, { x: BX[b] - 112, y: Y.res + 10, o: 1 })
+        .put(`eqn:${b}`, { x: BX[b], y: Y.eqn, o: 1 });
+    }
+    return L;
+  }
+  function L4_branch() {
+    const L = branches(L4_lift().hide("cap:follow"));
+    return cap(L, "qkv");
+  }
+  function L4_q() { return results(L4_branch().hide("cap:qkv"), ["q"], digits()); }
+  function L4_kv() { return results(L4_branch().hide("cap:qkv"), BRANCHES, digits()); }
+  function L4_intuition() {
+    const L = L4_kv();
+    for (const b of BRANCHES) L.put(`intu:${b}`, { x: BX[b], y: Y.intu + 6, o: 1 });
+    return L;
+  }
+  function L4_all() {
+    const L = tokenRow(HUD(new Layout()));
+    for (const b of BRANCHES) {
+      L.put(`W:${b}`, { x: BX[b], y: Y.mat, o: 1 }).put(`Wlab:${b}`, { x: BX[b] + WLAB[b].dx, y: Y.mat - 104, o: 1 });
+      L.put(`rowlab:${b}`, { x: 120, y: ROWY[b] + 11, o: 1 }).put(`mateq:${b}`, { x: BX[b], y: Y.res + 10, o: 1 });
+      for (let j = 0; j < N; j++) {
+        if (j === FOCUS) L.put(`res:${b}`, { x: colX(j), y: ROWY[b], s: 24 / 28, o: 1, orient: "row", gap: 90, src: `heads.0.${BR[b].M}.${FOCUS}`, d: 2 });
+        else L.put(`chip:${b}:${j}`, { x: colX(j), y: ROWY[b], o: 1 });
+      }
+    }
+    return cap(L, "same");
+  }
+
+  // ---------------------------------------------------------------------------- CHOREOGRAPHY HELPERS
+  const layoutOf = (i) => BEATS[i].layout();
+  function applyLayout(L, { dur = 700, run = null } = {}) {
+    const ps = [];
+    for (const [id, obj] of REG) {
+      const t = L.get(id);
+      if (run && run.dead) break;
+      ps.push(obj.morph(t || { o: 0 }, { dur: t && t._dur !== undefined ? t._dur : t ? dur : Math.min(dur, 450), delay: (t && t._delay) || 0, run }));
+    }
+    return Promise.all(ps);
+  }
+  // show only the objects of layout L that are already visible + move them; used before entrances
+  const vis = (id) => REG.get(id).o > 0.01;
+
+  // Vector grows downward out of a point (token node or wave sample).
+  async function growVector(run, v, { fromY, delay = 0, dur = 900 }) {
+    if (run.dead) return;
+    const tg = v.shape(v.orient, v.gap);
+    run.set(v, { bh: 0 });
+    v.cells.forEach((c, i) => run.set(c, { x: tg.cells[i].x, y: fromY, o: 0, h: 0 }));
+    await run.wait(delay);
+    await Promise.all([
+      run.tween(v, { bh: tg.bh }, { dur, ease: EASE.out }),
+      ...v.cells.map((c, i) => run.tween(c, { y: tg.cells[i].y, o: 1 }, { dur: dur * 0.85, delay: i * 70, ease: EASE.out })),
+    ]);
+  }
+
+  // Detailed x·W for one branch: pairs glow, products appear, the column sum flies into the result.
+  async function multiplyDetail(run, b, { pace = 1 } = {}) {
+    const B = BR[b], d = digits(), W = REG.get(`W:${b}`), res = REG.get(`res:${b}`), xv = REG.get(`vec:${FOCUS}`);
+    const trace = MODEL.heads[0][B.T][FOCUS];
+    const slow = (ui.showCalc ? 1.45 : 1) * pace;
+    const others = BRANCHES.filter((o) => o !== b);
+    // focus on this branch
+    await Promise.all(others.flatMap((o) => [run.tween(REG.get(`W:${o}`), { o: 0.25 }, { dur: 400 }), run.tween(REG.get(`wire:${o}`), { o: 0.25 }, { dur: 400 }), run.tween(REG.get(`Wlab:${o}`), { o: 0.25 }, { dur: 400 })]));
+    // x arrives as a column aligned with the matrix rows (row r of W multiplies x_r)
+    const xc = run.own(new VectorObj(null, LAYER.fx, { n: 4, size: 26, gap: 44, src: `X.${FOCUS}`, d, cls: "v-x", hlCls: `hl-${B.color}` }));
+    const mirror = BX[b] > 1400; // right-hand branch: products go on the left of the matrix
+    const xcX = mirror ? BX[b] + 175 : BX[b] - 175;
+    xc.set({ x: xcX, y: Y.mat, o: 1, bh: 0 });
+    xc.cells.forEach((c, i) => { const a = xv.cellAbs(i); c.x = a.x - xcX; c.y = a.y - Y.mat; c.o = 1; c.apply(); });
+    const tg = xc.shape("col", 44);
+    await Promise.all([run.tween(xc, { bh: tg.bh }, { dur: 700 * slow }), ...xc.cells.map((c, i) => run.tween(c, tg.cells[i], { dur: 800 * slow, delay: i * 60 }))]);
+    if (run.dead) return;
+    // result vector appears empty; each column sum fills one cell
+    run.set(res, { x: BX[b], y: Y.res, s: 1, o: 1 });
+    res.bind(`heads.0.${B.M}.${FOCUS}`, d);
+    res.cells.forEach((c) => run.set(c, { o: 0, h: 0 }));
+    run.set(REG.get(`reslab:${b}`), { x: BX[b] - 112, y: Y.res + 10, o: 0 });
+    run.tween(REG.get(`reslab:${b}`), { o: 1 }, { dur: 500 });
+    const px = mirror ? BX[b] - 120 : BX[b] + 412; // right edge of the product column
+    for (let c = 0; c < 2; c++) {
+      const col = trace.columns[c];
+      const step = (c === 0 ? 1 : 0.72) * slow;
+      await run.tween(W.colHl[c], { h: 1 }, { dur: 300 * step });
+      const lines = [];
+      for (let r = 0; r < 4; r++) {
+        const y = Y.mat + (r - 1.5) * 44;
+        await Promise.all([run.tween(xc.cells[r], { h: 1 }, { dur: 160 * step }), run.tween(W.cell(r, c), { h: 1 }, { dur: 160 * step })]);
+        if (run.dead) return;
+        const ln = run.own(new Node2D(null, LAYER.fx, "prod"));
+        const t = svg("text", { class: "num", "font-size": 24, "text-anchor": "end", "dominant-baseline": "central" }, ln.el);
+        const a = svg("tspan", { class: "muted" }, t); bindNum(a, `X.${FOCUS}.${r}`, d);
+        const wv = E.PARAMS.heads[0][B.W][r][c];
+        svg("tspan", { class: "muted" }, t).textContent = wv < 0 ? " × (" : " × ";
+        const w = svg("tspan", { class: "muted" }, t); bindNum(w, `params.heads.0.${B.W}.${r}.${c}`, 1);
+        if (wv < 0) svg("tspan", { class: "muted" }, t).textContent = ")";
+        svg("tspan", { class: "muted" }, t).textContent = ` ${E.productSign(MODEL.X[FOCUS][r], d, E.PARAMS.heads[0][B.W][r][c], 1, col.terms[r], d)} `;
+        const p = svg("tspan", { class: `f-${B.color}` }, t); bindNum(p, `heads.0.${B.T}.${FOCUS}.columns.${c}.terms.${r}`, d);
+        ln.set({ x: px + 12, y, o: 0 });
+        lines.push(ln);
+        await run.tween(ln, { o: 1, x: px }, { dur: 260 * step, ease: EASE.out });
+        await Promise.all([run.tween(xc.cells[r], { h: 0.25 }, { dur: 200 * step }), run.tween(W.cell(r, c), { h: 0.25 }, { dur: 200 * step })]);
+        await run.wait(90 * step);
+      }
+      // column addition
+      if (run.dead) return;
+      const rule = run.own(new PathObj(null, LAYER.fx, { d: `M ${px - 110} ${Y.mat + 2 * 44 + 4} H ${px}`, cls: "rule" }));
+      rule.set({ o: 1, draw: 0 });
+      await run.tween(rule, { draw: 1 }, { dur: 260 * step });
+      if (run.dead) return;
+      const tot = run.own(new Node2D(null, LAYER.fx, "total"));
+      const tt = svg("text", { class: "num", "font-size": 28, "text-anchor": "end", "dominant-baseline": "central" }, tot.el);
+      svg("tspan", { class: "muted" }, tt).textContent = `${E.relationSign(col.terms, col.sum, d)} `;
+      const sumSpan = svg("tspan", { class: `f-${B.color}` }, tt); bindNum(sumSpan, `heads.0.${B.T}.${FOCUS}.columns.${c}.sum`, d);
+      tot.set({ x: px, y: Y.mat + 2 * 44 + 36, o: 0 });
+      await run.tween(tot, { o: 1 }, { dur: 300 * step });
+      await run.wait(420 * step);
+      // the sum travels into the result vector
+      const target = res.cellAbs(c);
+      const w0 = tt.getComputedTextLength ? tt.getComputedTextLength() : 60;
+      await run.tween(tot, { x: target.x + w0 / 2 - 6, y: target.y, s: 1 }, { dur: 650 * step });
+      await Promise.all([run.tween(tot, { o: 0 }, { dur: 200 }), run.tween(res.cells[c], { o: 1 }, { dur: 250 })]);
+      await Promise.all([
+        ...lines.map((l) => run.tween(l, { o: 0 }, { dur: 250 })), run.tween(rule, { o: 0 }, { dur: 250 }),
+        run.tween(W.colHl[c], { h: 0 }, { dur: 250 }),
+        ...[0, 1, 2, 3].flatMap((r) => [run.tween(xc.cells[r], { h: 0 }, { dur: 250 }), run.tween(W.cell(r, c), { h: 0 }, { dur: 250 })]),
+      ]);
+    }
+    await run.tween(xc, { o: 0 }, { dur: 400 });
+    await Promise.all(others.flatMap((o) => [run.tween(REG.get(`W:${o}`), { o: 1 }, { dur: 400 }), run.tween(REG.get(`wire:${o}`), { o: 1 }, { dur: 400 }), run.tween(REG.get(`Wlab:${o}`), { o: 1 }, { dur: 400 })]));
+  }
+
+  // A pulse travelling along a wire (signal flow).
+  async function pulse(run, wireId, cls, { dur = 800, delay = 0 } = {}) {
+    const wire = REG.get(wireId);
+    const dot = run.own(new DotObj(null, LAYER.fx, { r: 6, cls: `f-${cls}`, glow: `g-${cls}` }));
+    const st = { f: 0, apply() { const p = wire.pointAt(this.f); dot.set({ x: p.x, y: p.y }); } };
+    await run.wait(delay);
+    run.set(dot, { o: 1 }); st.apply();
+    await run.tween(st, { f: 1 }, { dur, ease: EASE.inOut });
+    await run.tween(dot, { o: 0 }, { dur: 200 });
+  }
+
+  // ---------------------------------------------------------------------------- SCENES
+  const SCENES = [
+    { label: "Sentence", title: "Sentence" },
+    { label: "Vectors", title: "Vectors" },
+    { label: "Position", title: "Position" },
+    { label: "QKV", title: "Q, K, V" },
+    { label: "Scores", title: "Scores", todo: "M3" },
+    { label: "Softmax", title: "Softmax", todo: "M3" },
+    { label: "Values", title: "Values", todo: "M3" },
+    { label: "Heads", title: "Heads", todo: "M4" },
+    { label: "Encoder", title: "Encoder", todo: "M4" },
+    { label: "Transformer", title: "Transformer", todo: "M5" },
+  ];
+  const NOTES = [
+    "One sentence, eight tokens. Self-attention lets every token look at every other token directly — one step, regardless of distance (the paper's O(1) path length).",
+    "Each token is looked up in an embedding table: 4 numbers here, 512 in the paper. These are hand-chosen toy values (already including the paper's ×√d_model scaling), not learned weights.",
+    "Attention has no built-in notion of order, so the paper adds fixed sine/cosine waves of different frequencies. The dots are the waves sampled at each position. With only 4 dimensions there is one fast pair and one slow pair; the slow pair barely changes across 8 tokens.",
+    "Each representation is projected three ways, with the same three matrices for every token. The math gives Q, K and V no English meaning — a useful intuition: the Query is what this position looks for, the Key how it is matched, the Value what it can contribute.",
+  ];
+
+  const BEATS = [
+    // ---- Scene 1 — THE SENTENCE
+    { scene: 0, id: "title", layout: L1_title, dwell: 1800,
+      async play(run) {
+        await run.wait(350);
+        const t = REG.get("title"), q = REG.get("question");
+        run.set(t, { ...TITLE.big, o: 0 }); run.set(q, { x: 960, y: 540, o: 0 });
+        await run.tween(t, { o: 1 }, { dur: 1500, ease: EASE.out });
+        await run.wait(250);
+        await run.tween(q, { o: 1 }, { dur: 1000, ease: EASE.out });
+      } },
+    { scene: 0, id: "words", layout: L1_words,
+      async play(run) {
+        await Promise.all([run.morph("title", { ...TITLE.hud, o: 1 }, { dur: 1200 }), run.morph("question", { x: 960, y: 336, o: 0.9 }, { dur: 1200 }), run.morph("status", { x: 1848, y: 60, o: 1 }, { dur: 900, delay: 600 })]);
+        for (let j = 0; j < N; j++) {
+          const tok = REG.get(`tok:${j}`);
+          run.set(tok, { x: S1X[j], y: 582, s: 1, o: 0, pill: 0 });
+          run.tween(tok, { y: 560, o: 1, pill: 1 }, { dur: 700, delay: j * 170, ease: EASE.out });
+        }
+        await run.wait(N * 170 + 700);
+      } },
+    { scene: 0, id: "pairs", layout: L1_pairs,
+      async play(run) {
+        run.morph("question", { o: 0 }, { dur: 500 });
+        const arcs = [...REG.values()].filter((o) => o.id && o.id.startsWith("arc:"));
+        arcs.forEach((a) => run.set(a, { o: 0.75, draw: 0 }));
+        await Promise.all(arcs.map((a) => run.tween(a, { draw: 1 }, { dur: 900, delay: a.order * 34, ease: EASE.out })));
+        await run.morph("cap:pairs", { x: 960, y: 690, o: 1 }, { dur: 700 });
+      } },
+    // ---- Scene 2 — TOKENS BECOME VECTORS
+    { scene: 1, id: "nodes", layout: L2_nodes,
+      async play(run) { await applyLayout(L2_nodes(), { dur: 1100, run }); } },
+    { scene: 1, id: "vectors", layout: L2_vectors,
+      async play(run) {
+        await Promise.all(Array.from({ length: N }, (_, j) => {
+          const v = REG.get(`vec:${j}`);
+          run.set(v, { x: colX(j), y: Y.vec, s: 1, o: 1 });
+          v.bind(`E.${j}`, 2); v.setCls("v-neutral");
+          return growVector(run, v, { fromY: Y.node - Y.vec, delay: j * 60 });
+        }));
+        await Promise.all([run.morph("cap:vectors", { x: 960, y: Y.cap, o: 1 }, { dur: 700 }), run.morph("ann:demo", { x: 960, y: 538, o: 1 }, { dur: 700, delay: 200 }), run.morph("ann:paper", { x: 960, y: 580, o: 1 }, { dur: 700, delay: 350 }), run.morph("ann:toy", { x: 960, y: 640, o: 1 }, { dur: 700, delay: 600 })]);
+      } },
+    // ---- Scene 3 — POSITION
+    { scene: 2, id: "waves", layout: L3_waves,
+      async play(run) {
+        await Promise.all(["cap:vectors", "ann:demo", "ann:paper", "ann:toy"].map((id) => run.morph(id, { o: 0 }, { dur: 450 })));
+        run.morph("cap:waves", { x: 960, y: Y.cap, o: 1 }, { dur: 700 });
+        const ps = [];
+        for (let d = 0; d < 4; d++) {
+          const lane = REG.get(`lane:${d}`), axis = REG.get(`axis:${d}`);
+          run.set(axis, { o: 0.9, draw: 0 }); run.set(lane, { o: 1, draw: 0 });
+          ps.push(run.tween(axis, { draw: 1 }, { dur: 1300, delay: d * 160 }), run.tween(lane, { draw: 1 }, { dur: 1700, delay: d * 160, ease: EASE.inOut }));
+          ps.push(run.morph(`lanelab:${d}`, { x: posX(WAVE.from) - 10, y: laneLabelY(d), o: 1 }, { dur: 600, delay: d * 160 }));
+          for (let j = 0; j < N; j++) {
+            const dot = REG.get(`dot:${j}:${d}`);
+            run.set(dot, { x: colX(j), y: dotY(j, d), o: 0, s: 0.3 });
+            ps.push(run.tween(dot, { o: 1, s: 1 }, { dur: 350, delay: 700 + d * 160 + j * 110, ease: EASE.out }));
+          }
+        }
+        await Promise.all(ps);
+      } },
+    { scene: 2, id: "rise", layout: L3_rise,
+      async play(run) {
+        run.morph("cap:waves", { o: 0 }, { dur: 400 });
+        run.morph("cap:added", { x: 960, y: Y.cap, o: 1 }, { dur: 700, delay: 300 });
+        const ps = [];
+        for (let j = 0; j < N; j++) {
+          const pe = REG.get(`pe:${j}`);
+          const tg = pe.shape("col", 44);
+          pe.bind(`P.${j}`, 2);
+          run.set(pe, { x: colX(j), y: Y.pe, s: 1, o: 1, bh: 0 });
+          pe.cells.forEach((c, d) => run.set(c, { x: 0, y: dotY(j, d) - Y.pe, o: 0, h: 0 }));
+          const delay = j * 110;
+          ps.push(run.tween(pe, { bh: tg.bh }, { dur: 450, delay: delay + 650, ease: EASE.out })); // bracket closes as the values land
+          pe.cells.forEach((c, d) => {
+            ps.push(run.tween(c, { y: tg.cells[d].y, o: 1 }, { dur: 1000, delay: delay + d * 60, ease: EASE.inOut }));
+            ps.push(run.tween(REG.get(`dot:${j}:${d}`), { o: 0.35 }, { dur: 700, delay: delay + d * 60 }));
+          });
+          ps.push(run.morph(`plus:${j}`, { x: colX(j), y: (Y.vec + Y.pe) / 2 + 11, o: 0.9 }, { dur: 500, delay: delay + 800 }));
+        }
+        await Promise.all(ps);
+      } },
+    { scene: 2, id: "detail", layout: L3_detail,
+      async play(run) {
+        const d = digits();
+        const L = L3_detail();
+        // everything except the equation settles (others dim, waves fade)
+        const eqIds = ["det:e", "det:p", "det:x", "det:plus", "det:eq", "det:le", "det:lp", "det:lx"];
+        const pre = new Layout(L);
+        eqIds.forEach((id) => pre.hide(id));
+        pre.hide("cap:added");
+        await applyLayout(pre, { dur: 700, run });
+        if (run.dead) return;
+        // copies of e_it and PE_it travel down into the equation
+        const de = REG.get("det:e"), dp = REG.get("det:p"), dx = REG.get("det:x");
+        de.bind(`E.${FOCUS}`, d); dp.bind(`P.${FOCUS}`, d); dx.bind(`X.${FOCUS}`, d);
+        run.set(de, { x: colX(FOCUS), y: Y.vec, s: 30 / 32, o: 1 }); de.cells.forEach((c) => run.set(c, { o: 1, h: 0 }));
+        run.set(dp, { x: colX(FOCUS), y: Y.pe, s: 30 / 32, o: 1 }); dp.cells.forEach((c) => run.set(c, { o: 1, h: 0 }));
+        await Promise.all([run.tween(de, { x: DETX.e, y: 812, s: 1 }, { dur: 1000 }), run.tween(dp, { x: DETX.p, y: 812, s: 1 }, { dur: 1000, delay: 120 })]);
+        await Promise.all([run.morph("det:plus", L.get("det:plus"), { dur: 400 }), run.morph("det:le", L.get("det:le"), { dur: 500 }), run.morph("det:lp", L.get("det:lp"), { dur: 500 })]);
+        await run.morph("det:eq", L.get("det:eq"), { dur: 400 });
+        if (run.dead) return;
+        run.set(dx, { x: DETX.x, y: 812, s: 1, o: 1 }); dx.cells.forEach((c) => run.set(c, { o: 0, h: 0 }));
+        const tg = dx.shape("col", 48);
+        run.set(dx, { bw: tg.bw, bh: tg.bh });
+        for (let i = 0; i < 4; i++) {
+          await Promise.all([run.tween(de.cells[i], { h: 1 }, { dur: 200 }), run.tween(dp.cells[i], { h: 1 }, { dur: 200 })]);
+          await run.tween(dx.cells[i], { o: 1 }, { dur: 320 });
+          await Promise.all([run.tween(de.cells[i], { h: 0 }, { dur: 250 }), run.tween(dp.cells[i], { h: 0 }, { dur: 250 })]);
+        }
+        await run.morph("det:lx", L.get("det:lx"), { dur: 500 });
+      } },
+    { scene: 2, id: "merge", layout: L3_merged,
+      async play(run) {
+        const dx = REG.get("det:x"), v4 = REG.get(`vec:${FOCUS}`);
+        await Promise.all(["det:e", "det:p", "det:plus", "det:eq", "det:le", "det:lp", "det:lx"].map((id) => run.morph(id, { o: 0 }, { dur: 450 })));
+        // the sum for "it" returns to its column and becomes the input representation
+        await run.tween(dx, { x: colX(FOCUS), y: Y.vec, s: 30 / 32 }, { dur: 1000 });
+        if (run.dead) return;
+        v4.bind(`X.${FOCUS}`, 2); v4.setCls("v-x");
+        await Promise.all([run.tween(v4, { o: 1 }, { dur: 200 }), run.tween(dx, { o: 0 }, { dur: 300 })]);
+        // every other token: its PE vector rises into the embedding, which flips to e + PE
+        const ps = [];
+        for (let j = 0; j < N; j++) {
+          if (j === FOCUS) continue;
+          const pe = REG.get(`pe:${j}`), v = REG.get(`vec:${j}`), delay = (j < FOCUS ? j : j - 1) * 90;
+          ps.push((async () => {
+            await run.wait(delay);
+            await Promise.all([run.tween(pe, { y: Y.vec, o: 0.0 }, { dur: 800 }), run.tween(REG.get(`plus:${j}`), { o: 0 }, { dur: 300 })]);
+            if (run.dead) return;
+            v.setCls("v-x");
+            await v.morph({ src: `X.${j}`, d: 2, o: 1, hlCls: "hl-pe", hl: 1 }, { dur: 600, run });
+            await v.morph({ o: 1, hl: 0 }, { dur: 500, run });
+          })());
+        }
+        ps.push(run.tween(REG.get(`plus:${FOCUS}`), { o: 0 }, { dur: 300 }), run.tween(REG.get(`pe:${FOCUS}`), { o: 0 }, { dur: 300 }));
+        await Promise.all(ps);
+        await applyLayout(L3_merged(), { dur: 800, run });
+      } },
+    // ---- Scene 4 — Q, K, V
+    { scene: 3, id: "lift", layout: L4_lift,
+      async play(run) { await applyLayout(L4_lift(), { dur: 1200, run }); } },
+    { scene: 3, id: "branch", layout: L4_branch,
+      async play(run) {
+        run.morph("cap:follow", { o: 0 }, { dur: 400 });
+        run.morph("cap:qkv", { x: 960, y: Y.cap, o: 1 }, { dur: 700, delay: 300 });
+        const ps = [];
+        BRANCHES.forEach((b, k) => {
+          const w = REG.get(`wire:${b}`);
+          run.set(w, { o: 1, draw: 0 });
+          ps.push(run.tween(w, { draw: 1 }, { dur: 900, delay: k * 140, ease: EASE.inOut }));
+          ps.push(run.morph(`W:${b}`, { x: BX[b], y: Y.mat, o: 1 }, { dur: 600, delay: 700 + k * 140 }));
+          ps.push(run.morph(`Wlab:${b}`, { x: BX[b] + WLAB[b].dx, y: Y.mat - 104, o: 1 }, { dur: 600, delay: 900 + k * 140 }));
+          ps.push(pulse(run, `wire:${b}`, BR[b].color, { dur: 900, delay: 300 + k * 140 }));
+        });
+        await Promise.all(ps);
+      } },
+    { scene: 3, id: "query", layout: L4_q,
+      async play(run) {
+        run.morph("cap:qkv", { o: 0 }, { dur: 400 });
+        await multiplyDetail(run, "q");
+        await run.morph("eqn:q", { x: BX.q, y: Y.eqn, o: 1 }, { dur: 600 });
+      } },
+    { scene: 3, id: "keyvalue", layout: L4_kv,
+      async play(run) {
+        if (ui.showCalc) {
+          for (const b of ["k", "v"]) { await multiplyDetail(run, b, { pace: 0.8 }); await run.morph(`eqn:${b}`, { x: BX[b], y: Y.eqn, o: 1 }, { dur: 500 }); }
+          return;
+        }
+        await Promise.all(["k", "v"].map((b, k) => pulse(run, `wire:${b}`, BR[b].color, { dur: 800, delay: k * 150 })));
+        const W = ["k", "v"].map((b) => REG.get(`W:${b}`));
+        await Promise.all(W.flatMap((m) => m.cells.map((c) => run.tween(c, { h: 0.7 }, { dur: 250 }))));
+        await Promise.all(W.flatMap((m) => m.cells.map((c) => run.tween(c, { h: 0 }, { dur: 400 }))));
+        const L = L4_kv();
+        await Promise.all(["k", "v"].flatMap((b, k) => [
+          run.morph(`res:${b}`, L.get(`res:${b}`), { dur: 600, delay: k * 150 }),
+          run.morph(`reslab:${b}`, L.get(`reslab:${b}`), { dur: 600, delay: k * 150 }),
+          run.morph(`eqn:${b}`, L.get(`eqn:${b}`), { dur: 600, delay: 300 + k * 150 }),
+        ]));
+      } },
+    { scene: 3, id: "intuition", layout: L4_intuition,
+      async play(run) {
+        await Promise.all(BRANCHES.map((b, k) => run.morph(`intu:${b}`, { x: BX[b], y: Y.intu + 6, o: 1 }, { dur: 700, delay: k * 260 })));
+      } },
+    { scene: 3, id: "alltokens", layout: L4_all,
+      async play(run) {
+        const fade = ["xlab", "cap:follow", ...BRANCHES.flatMap((b) => [`wire:${b}`, `reslab:${b}`, `eqn:${b}`, `intu:${b}`])];
+        await Promise.all(fade.map((id) => run.morph(id, { o: 0 }, { dur: 450 })));
+        // every token's x comes back into view; "it" returns to its column
+        const L0 = vectorCols(tokenRow(HUD(new Layout())), { src: "X" });
+        await Promise.all([...Array(N).keys()].flatMap((j) => [run.morph(`tok:${j}`, L0.get(`tok:${j}`), { dur: 700 }), run.morph(`node:${j}`, L0.get(`node:${j}`), { dur: 700 }), run.morph(`vec:${j}`, L0.get(`vec:${j}`), { dur: 900 })]));
+        // the same matrices act on all tokens at once
+        const mats = BRANCHES.map((b) => REG.get(`W:${b}`));
+        await Promise.all(mats.flatMap((m) => m.cells.map((c) => run.tween(c, { h: 0.65 }, { dur: 260 }))));
+        run.morph("cap:same", { x: 960, y: Y.cap, o: 1 }, { dur: 700 });
+        const L = L4_all();
+        const ps = [...mats.flatMap((m) => m.cells.map((c) => run.tween(c, { h: 0 }, { dur: 500 })))];
+        BRANCHES.forEach((b, k) => {
+          for (let j = 0; j < N; j++) {
+            if (j === FOCUS) continue;
+            const chip = REG.get(`chip:${b}:${j}`);
+            run.set(chip, { x: colX(j), y: Y.vec, s: 0.5, o: 0 });
+            ps.push(run.tween(chip, { y: ROWY[b], s: 1, o: 1 }, { dur: 800, delay: 250 + k * 220 + j * 25, ease: EASE.out }));
+          }
+          ps.push(run.morph(`res:${b}`, L.get(`res:${b}`), { dur: 1000, delay: k * 220 }));
+          ps.push(run.morph(`rowlab:${b}`, L.get(`rowlab:${b}`), { dur: 600, delay: 600 + k * 220 }));
+          ps.push(run.morph(`mateq:${b}`, L.get(`mateq:${b}`), { dur: 700, delay: 900 + k * 220 }));
+        });
+        for (let j = 0; j < N; j++) ps.push(run.morph(`vec:${j}`, { o: 0 }, { dur: 600, delay: 300 }));
+        await Promise.all(ps);
+      } },
+  ];
+
+  // ---------------------------------------------------------------------------- DIRECTOR (navigation)
+  const director = {
+    gen: 0, index: -1, run: null, autoplay: false,
+    async play(i) {
+      this.gen++;
+      const run = new Run(this.gen);
+      this.run = run;
+      this.index = i;
+      hud.update();
+      run.done = (async () => {
+        try {
+          const beat = BEATS[i];
+          if (beat.play) await beat.play(run); else await applyLayout(beat.layout(), { dur: 900, run });
+        } finally {
+          if (!run.dead) {
+            run.cleanup();
+            await applyLayout(layoutOf(i), { dur: 0 });
+            this.run = null;
+            hud.update();
+          }
+        }
+      })();
+      return run.done;
+    },
+    skip() { if (this.run) { this.run.skip = true; finishAll(); } },
+    next() {
+      if (clock.frozen) freeze(false);
+      if (this.run) { this.skip(); return; }
+      if (this.index < BEATS.length - 1) this.play(this.index + 1);
+      else toast("Scenes 5–10 are built in M3–M5.");
+    },
+    prev() {
+      if (clock.frozen) freeze(false);
+      this.autoplay = false;
+      this.jump(Math.max(0, this.index - 1));
+    },
+    jump(i, dur = 700) {
+      this.gen++;
+      if (this.run) { this.run.cleanup(); this.run = null; }
+      finishAll();
+      this.index = i;
+      hud.update();
+      return applyLayout(layoutOf(i), { dur });
+    },
+    restart() {
+      this.autoplay = false;
+      if (clock.frozen) freeze(false);
+      this.gen++;
+      if (this.run) { this.run.cleanup(); this.run = null; }
+      finishAll();
+      for (const o of REG.values()) { o.o = 0; o.apply(); }
+      this.index = -1;
+      return this.play(0);
+    },
+    async autoplayLoop() {
+      while (this.autoplay) {
+        if (this.run) await this.run.done;
+        if (!this.autoplay) break;
+        const b = BEATS[this.index];
+        const atSceneEnd = this.index === BEATS.length - 1 || BEATS[this.index + 1].scene !== b.scene;
+        if (atSceneEnd) break;
+        await wait(b.dwell ?? 2600);
+        if (!this.autoplay || this.run) continue;
+        this.play(this.index + 1);
+      }
+      this.autoplay = false;
+      hud.update();
+    },
+    togglePlay() {
+      if (clock.frozen) { freeze(false); hud.update(); return; }
+      if (this.autoplay || this.run) { freeze(true); hud.update(); return; }
+      this.autoplay = true;
+      hud.update();
+      const b = BEATS[this.index];
+      const atSceneEnd = this.index === BEATS.length - 1 || BEATS[this.index + 1].scene !== b.scene;
+      if (atSceneEnd && this.index < BEATS.length - 1) this.play(this.index + 1);
+      this.autoplayLoop();
+    },
+  };
+
+  // ---------------------------------------------------------------------------- HUD, TIMELINE, PANELS
+  const $ = (id) => document.getElementById(id);
+  let toastTimer = 0;
+  function toast(msg) {
+    const t = $("toast");
+    t.textContent = msg;
+    t.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.classList.remove("show"), 2200);
+  }
+  const hud = {
+    built: false,
+    build() {
+      const nav = $("timeline");
+      SCENES.forEach((s, k) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.textContent = s.label;
+        b.dataset.scene = k;
+        if (s.todo) { b.classList.add("todo"); b.disabled = true; b.title = `Built in ${s.todo}`; }
+        else b.title = `${k + 1}. ${s.title}`;
+        b.addEventListener("click", () => { director.autoplay = false; director.jump(BEATS.findIndex((x) => x.scene === k)); });
+        nav.appendChild(b);
+      });
+      const ex = document.createElement("button");
+      ex.type = "button"; ex.textContent = "Explore"; ex.disabled = true; ex.classList.add("todo"); ex.title = "Built in M4";
+      nav.appendChild(ex);
+      this.built = true;
+    },
+    update() {
+      const i = Math.max(0, director.index);
+      const beat = BEATS[i];
+      const sc = SCENES[beat.scene];
+      const st = REG.get("status");
+      st.t.textContent = `${beat.scene + 1} / ${SCENES.length}  ·  ${sc.title}`;
+      document.querySelectorAll("#timeline button[data-scene]").forEach((b) => {
+        const k = Number(b.dataset.scene);
+        b.classList.toggle("current", k === beat.scene);
+        b.classList.toggle("past", k < beat.scene);
+        if (k === beat.scene) b.setAttribute("aria-current", "step"); else b.removeAttribute("aria-current");
+      });
+      const playing = !clock.frozen && (director.autoplay || director.run);
+      $("play-icon").setAttribute("d", playing ? "M6.5 4.5h4v15h-4zm7 0h4v15h-4z" : "M7 4.5v15l12-7.5z");
+      $("btn-play").setAttribute("aria-label", playing ? "Pause (Space)" : "Play (Space)");
+      $("btn-prev").disabled = director.index <= 0 && !director.run;
+      $("btn-calc").setAttribute("aria-pressed", String(ui.showCalc));
+      const inPE = beat.scene === 2;
+      $("pe-math-btn").hidden = !inPE;
+      if (!inPE && ui.peMath) setPeMath(false);
+      notes.render(beat);
+      if (debug.open) debug.render();
+    },
+  };
+  function setPeMath(on) {
+    ui.peMath = on;
+    $("pe-math").hidden = !on;
+    $("pe-math-btn").setAttribute("aria-expanded", String(on));
+  }
+  const notes = {
+    open: false,
+    render(beat) {
+      const el = $("notes");
+      el.hidden = !this.open;
+      if (!this.open) return;
+      el.innerHTML = `<h2>Presenter notes · ${beat.scene + 1}. ${SCENES[beat.scene].title}</h2><p>${NOTES[beat.scene] ?? ""}</p><p style="color:var(--ink-faint)">beat ${director.index + 1}/${BEATS.length} · ${beat.id} · N to hide</p>`;
+    },
+  };
+  const debug = {
+    open: false,
+    table(title, M, rowLabels, colLabels, p = 6) {
+      const head = `<tr><th></th>${colLabels.map((c) => `<th>${c}</th>`).join("")}</tr>`;
+      const body = M.map((row, i) => `<tr><th>${rowLabels[i]}</th>${row.map((v) => `<td>${Number.isFinite(v) ? v.toFixed(p) : String(v)}</td>`).join("")}</tr>`).join("");
+      return `<div>${title}</div><table>${head}${body}</table>`;
+    },
+    render() {
+      const el = $("debug");
+      el.hidden = !this.open;
+      if (!this.open) return;
+      const a = audit();
+      const dims = ["d0", "d1", "d2", "d3"];
+      let html = `<h2>Verification (D to hide)</h2><p>Display audit: <span class="${a.mismatches.length || a.badText.length ? "bad" : "ok"}">${a.checked} visible numbers checked · ${a.mismatches.length} mismatches · ${a.badText.length} invalid strings</span> <button type="button" id="dbg-audit">re-run</button></p>`;
+      html += `<p>Embeddings already include ×√d_model (paper §3.4); lookup is case-insensitive (pedagogical choice).</p>`;
+      html += this.table("E (embeddings)", MODEL.E, TOKENS, dims);
+      html += this.table("P (positional encoding)", MODEL.P, TOKENS, dims);
+      html += this.table("X = E + P", MODEL.X, TOKENS, dims);
+      MODEL.heads.forEach((H, h) => {
+        html += this.table(`Head ${h + 1}: Q`, H.Q, TOKENS, ["q1", "q2"]);
+        html += this.table(`Head ${h + 1}: K`, H.K, TOKENS, ["k1", "k2"]);
+        html += this.table(`Head ${h + 1}: V`, H.V, TOKENS, ["v1", "v2"]);
+        html += this.table(`Head ${h + 1}: QKᵀ (raw)`, H.raw, TOKENS, TOKENS, 4);
+        html += this.table(`Head ${h + 1}: softmax(QKᵀ/√d_k)`, H.A, TOKENS, TOKENS, 4);
+      });
+      html += this.table("Concat(head_1, head_2)", MODEL.Concat, TOKENS, ["h1₁", "h1₂", "h2₁", "h2₂"]);
+      html += this.table("MultiHead = Concat·W_O", MODEL.MH, TOKENS, dims);
+      el.innerHTML = html;
+      $("dbg-audit").addEventListener("click", () => this.render());
+    },
+  };
+  function about() {
+    const el = $("about");
+    el.innerHTML = `<h2 id="about-title">About this demo</h2>
+      <p class="lead">Built with LLM coding assistance.</p>
+      <p>The demo uses a scaled-down Transformer attention calculation with pedagogical parameters. The mathematical operations follow Vaswani et al. (2017).</p>
+      <p>Tiny teaching model — dimensions reduced so every calculation can be shown (d_model = 4, 2 heads, d_k = d_v = 2; the paper's base model uses 512, 8, 64). The mechanism is real Transformer attention. The small vectors and weights are illustrative teaching values, not weights from the original trained model.</p>
+      <p>What we asked the coding assistant to build:</p><p class="edit">${DISCLOSURE.asked}</p>
+      <p>What we manually checked or fixed:</p><p class="edit">${DISCLOSURE.checked}</p>
+      <label><input type="checkbox" id="force-motion" ${ui.forceMotion ? "checked" : ""}> Animate even when the system asks for reduced motion${reduceMQ.matches ? " (reduced motion is on)" : ""}</label>
+      <dl><dt>→ / PgDn</dt><dd>next step (finishes a running animation first)</dd><dt>← / PgUp</dt><dd>previous step</dd><dt>Space</dt><dd>play / pause</dd><dt>C</dt><dd>show calculation (slower, 3 decimals)</dd><dt>R</dt><dd>restart</dd><dt>F</dt><dd>fullscreen</dd><dt>N</dt><dd>presenter notes</dd><dt>D</dt><dd>verification panel</dd><dt>M</dt><dd>positional-encoding formula (Scene 3)</dd></dl>
+      <button type="button" id="about-close">Close</button>`;
+    el.hidden = false;
+    $("about-close").addEventListener("click", closeAbout);
+    $("force-motion").addEventListener("change", (e) => { ui.forceMotion = e.target.checked; updateMotion(); });
+    $("about-close").focus();
+  }
+  function closeAbout() { $("about").hidden = true; $("btn-about").focus(); }
+
+  // ---------------------------------------------------------------------------- AUDIT (display ↔ engine)
+  function shown(el) {
+    for (let n = el; n && n.id !== "stage"; n = n.parentNode) {
+      if (n.style && (n.style.visibility === "hidden" || (n.style.opacity !== "" && Number(n.style.opacity) < 0.01))) return false;
+    }
+    return true;
+  }
+  function audit() {
+    const mismatches = [];
+    let checked = 0;
+    for (const el of document.querySelectorAll("#stage [data-src]")) {
+      if (!shown(el)) continue;
+      checked++;
+      const want = E.fmt(val(el.dataset.src), Number(el.dataset.digits));
+      if (el.textContent !== want) mismatches.push({ src: el.dataset.src, shown: el.textContent, want });
+    }
+    const badText = [];
+    for (const t of document.querySelectorAll("#stage text")) if (shown(t) && /NaN|undefined|Infinity|null/.test(t.textContent)) badText.push(t.textContent);
+    return { checked, mismatches, badText };
+  }
+
+  // ---------------------------------------------------------------------------- EVENT HANDLERS & KEYBOARD
+  function toggleCalc() {
+    ui.showCalc = !ui.showCalc;
+    hud.update();
+    toast(ui.showCalc ? "Show calculation: on (slower, 3 decimals)" : "Show calculation: off");
+    // replay the current beat with the new precision / pace
+    const i = Math.max(0, director.index);
+    if (i > 0) { director.jump(i - 1, 0); director.play(i); } else director.jump(i, 300);
+  }
+  function toggleFullscreen() {
+    if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen?.().catch(() => toast("Fullscreen is not available here."));
+  }
+  function wire() {
+    $("btn-next").addEventListener("click", () => director.next());
+    $("btn-prev").addEventListener("click", () => director.prev());
+    $("btn-play").addEventListener("click", () => director.togglePlay());
+    $("btn-restart").addEventListener("click", () => director.restart());
+    $("btn-calc").addEventListener("click", toggleCalc);
+    $("btn-full").addEventListener("click", toggleFullscreen);
+    $("btn-about").addEventListener("click", about);
+    $("pe-math-btn").addEventListener("click", () => setPeMath(!ui.peMath));
+    reduceMQ.addEventListener("change", updateMotion);
+    document.addEventListener("keydown", (e) => {
+      const tag = (e.target && e.target.tagName) || "";
+      if (["INPUT", "TEXTAREA", "SELECT"].includes(tag) || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (!$("about").hidden) { if (e.key === "Escape") closeAbout(); return; }
+      const k = e.key;
+      const act = {
+        ArrowRight: () => director.next(), PageDown: () => director.next(),
+        ArrowLeft: () => director.prev(), PageUp: () => director.prev(),
+        " ": () => director.togglePlay(),
+        r: () => director.restart(), R: () => director.restart(),
+        f: toggleFullscreen, F: toggleFullscreen,
+        c: toggleCalc, C: toggleCalc,
+        n: () => { notes.open = !notes.open; hud.update(); }, N: () => { notes.open = !notes.open; hud.update(); },
+        d: () => { debug.open = !debug.open; debug.render(); }, D: () => { debug.open = !debug.open; debug.render(); },
+        m: () => { if (!$("pe-math-btn").hidden) setPeMath(!ui.peMath); }, M: () => { if (!$("pe-math-btn").hidden) setPeMath(!ui.peMath); },
+        e: () => toast("Explore mode arrives in M4."), E: () => toast("Explore mode arrives in M4."),
+        Escape: () => { if (ui.peMath) setPeMath(false); },
+      }[k];
+      if (act) { e.preventDefault(); act(); }
+    });
+    // Space must never also "click" a focused button
+    document.addEventListener("keyup", (e) => { if (e.key === " " && e.target && e.target.tagName === "BUTTON") e.preventDefault(); });
+    // fullscreen: hide cursor and dim controls after inactivity
+    let idleTimer = 0;
+    const wake = () => {
+      document.body.classList.remove("idle");
+      clearTimeout(idleTimer);
+      if (document.fullscreenElement) idleTimer = setTimeout(() => document.body.classList.add("idle"), 2500);
+    };
+    document.addEventListener("mousemove", wake);
+    document.addEventListener("fullscreenchange", wake);
+  }
+
+  // ---------------------------------------------------------------------------- TEST HOOKS (used by tests/browser.mjs)
+  globalThis.__demo = {
+    get index() { return director.index; },
+    get beats() { return BEATS.map((b) => ({ scene: b.scene, id: b.id })); },
+    idle: () => !director.run && !clock.tweens.size && !clock.timers.size,
+    next: () => director.next(),
+    prev: () => director.prev(),
+    goto: (i, dur = 0) => director.jump(i, dur),
+    play: (i) => director.play(i),
+    restart: () => director.restart(),
+    toggleCalc,
+    speed: (k) => { clock.speed = k; },
+    audit,
+    get showCalc() { return ui.showCalc; },
+    ready: false,
+  };
+
+  // ---------------------------------------------------------------------------- BOOTSTRAP / INIT
+  async function init() {
+    build();
+    await (document.fonts ? document.fonts.ready : Promise.resolve());
+    measure();
+    hud.build();
+    wire();
+    globalThis.__demo.ready = true;
+    director.play(0);
+  }
+  init();
+})();
+</script>
+</body>
+</html>
