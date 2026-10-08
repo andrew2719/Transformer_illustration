@@ -87,28 +87,64 @@ async function shot(dir, name) {
   writeFileSync(new URL(name, d), Buffer.from(data, "base64"));
 }
 
-// Visible text overlapping other visible text (layout regressions), measured in screen space.
-const OVERLAPS = `(() => {
+// Layout regressions, measured in screen space on what is actually visible:
+//  - text overlapping other text;
+//  - at rest: numbers crowding numbers or operators on the same line (they would read as one number),
+//    numbers touching a vector/matrix bracket, and α labels touching their bars.
+const LAYOUT = (atRest) => `((atRest) => {
   const vis = (el) => { let o = 1; for (let n = el; n && n.id !== "stage"; n = n.parentNode) { if (!n.style) continue; if (n.style.visibility === "hidden") return 0; if (n.style.opacity !== "") o *= Number(n.style.opacity); } return o; };
-  const items = [...document.querySelectorAll("#stage text")].map((t) => ({ t, o: vis(t), r: t.getBoundingClientRect() })).filter((x) => x.o > 0.45 && x.r.width > 0 && x.t.textContent.trim());
-  const out = [];
+  const stage = document.getElementById("stage").getBoundingClientRect();
+  const k = Math.min(stage.width / 1920, stage.height / 1080); // screen px per stage unit
+  const items = [...document.querySelectorAll("#stage text")].map((t) => ({ t, s: t.textContent.trim(), o: vis(t), r: t.getBoundingClientRect() })).filter((x) => x.o > 0.45 && x.r.width > 0 && x.s);
+  const isNum = (s) => /[0-9]/.test(s), isOp = (s) => /^[=≈+×÷·\\u2212]$/.test(s);
+  const vOver = (a, b) => Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+  const hGap = (a, b) => Math.max(a.left, b.left) - Math.min(a.right, b.right);
+  const name = (x) => x.s.slice(0, 24);
+  const overlaps = [], crowded = [];
   for (let i = 0; i < items.length; i++) for (let j = i + 1; j < items.length; j++) {
-    const a = items[i].r, b = items[j].r;
-    const w = Math.min(a.right, b.right) - Math.max(a.left, b.left), h = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
-    if (w > 2 && h > 2 && w * h > 0.15 * Math.min(a.width * a.height, b.width * b.height)) out.push(items[i].t.textContent.trim().slice(0, 24) + "  ×  " + items[j].t.textContent.trim().slice(0, 24));
+    const A = items[i], B = items[j], a = A.r, b = B.r;
+    const w = Math.min(a.right, b.right) - Math.max(a.left, b.left), h = vOver(a, b);
+    if (w > 2 && h > 2 && w * h > 0.15 * Math.min(a.width * a.height, b.width * b.height)) { overlaps.push(name(A) + "  ×  " + name(B)); continue; }
+    if (!atRest) continue;
+    const numA = isNum(A.s), numB = isNum(B.s);
+    if (!((numA && numB) || (numA && isOp(B.s)) || (isOp(A.s) && numB))) continue;
+    const hmin = Math.min(a.height, b.height);
+    if (h > 0.5 * hmin && hGap(a, b) < 0.22 * hmin) crowded.push(name(A) + "  |  " + name(B) + "  gap " + hGap(a, b).toFixed(1) + "px");
   }
-  const box = document.getElementById("stage").getBoundingClientRect();
-  const outside = items.filter((x) => x.r.left < box.left - 1 || x.r.right > box.right + 1 || x.r.top < box.top - 1 || x.r.bottom > box.bottom + 1).map((x) => x.t.textContent.trim().slice(0, 24));
-  const approx = items.filter((x) => x.t.textContent.includes("\\u2248")).map((x) => x.t.textContent.trim());
-  return { overlaps: out, outside, approx };
-})()`;
+  if (atRest) {
+    const nums = items.filter((x) => isNum(x.s));
+    for (const el of document.querySelectorAll("#stage path.bracket")) {
+      if (vis(el) < 0.45) continue;
+      const r = el.getBoundingClientRect(), pr = el.parentNode.getBoundingClientRect();
+      if (!r.height) continue;
+      const left = r.left + r.width / 2 < pr.left + pr.width / 2, line = left ? r.left : r.right;
+      for (const x of nums) {
+        if (vOver(x.r, r) < 0.3 * x.r.height) continue;
+        // clearance between the number and the bracket's vertical stroke, on whichever side it sits
+        const clear = left ? (x.r.left >= line - 1 ? x.r.left - line : line - x.r.right) : (x.r.right <= line + 1 ? line - x.r.right : x.r.left - line);
+        if (clear < 4 * k) crowded.push(name(x) + "  |  bracket  gap " + clear.toFixed(1) + "px");
+      }
+    }
+    for (const el of document.querySelectorAll("#stage rect.bar")) {
+      if (vis(el) < 0.45) continue;
+      const r = el.getBoundingClientRect();
+      if (!r.width) continue;
+      for (const x of nums) if (vOver(x.r, r) > 0 && x.r.right > r.left && x.r.left - r.right < 6 * k) crowded.push(name(x) + "  |  bar  gap " + (x.r.left - r.right).toFixed(1) + "px");
+    }
+  }
+  const outside = items.filter((x) => x.r.left < stage.left - 1 || x.r.right > stage.right + 1 || x.r.top < stage.top - 1 || x.r.bottom > stage.bottom + 1).map(name);
+  const approx = items.filter((x) => x.t.textContent.includes("\\u2248")).map((x) => x.s);
+  return { overlaps, crowded, outside, approx };
+})(${atRest})`;
 
-async function check(label, { allowApprox = false } = {}) {
+async function check(label, { allowApprox = false, geometry = true } = {}) {
   const a = await evaluate("__demo.audit()");
   if (a.mismatches.length) fail(`${label}: ${a.mismatches.length} displayed numbers differ from the engine, e.g. ${JSON.stringify(a.mismatches[0])}`);
   if (a.badText.length) fail(`${label}: invalid text ${JSON.stringify(a.badText.slice(0, 3))}`);
-  const v = await evaluate(OVERLAPS);
+  if (geometry && a.geometry.mismatches.length) fail(`${label}: ${a.geometry.mismatches.length} bars/wires not drawn from their α, e.g. ${JSON.stringify(a.geometry.mismatches[0])}`);
+  const v = await evaluate(LAYOUT(geometry));
   if (v.overlaps.length) fail(`${label}: overlapping text ${JSON.stringify(v.overlaps.slice(0, 4))}`);
+  if (v.crowded.length) fail(`${label}: crowded numbers ${JSON.stringify(v.crowded.slice(0, 4))}`);
   if (v.outside.length) fail(`${label}: text outside the stage ${JSON.stringify(v.outside.slice(0, 4))}`);
   if (!allowApprox && v.approx.length) fail(`${label}: "≈" shown on the guided path ${JSON.stringify(v.approx)}`);
   return a.checked;
@@ -172,7 +208,7 @@ try {
   // ---------------------------------------------------------------- random jumps
   console.log("jumps");
   await evaluate("__demo.speed(6)");
-  for (const i of [7, 2, 13, 0, 10, 5, 14, 3, 11, 1]) {
+  for (const i of [7, 2, 13, 0, 10, 5, 14, 3, 11, 1, 18, 26, 16, 22, 24, 20, 15, 25]) {
     if (i >= beats.length) continue;
     await evaluate(`__demo.goto(${i}, 400)`); await idle();
     await check(`jump to beat ${i + 1}`);
@@ -185,12 +221,12 @@ try {
   await evaluate(`__demo.goto(${qi - 1}, 0)`); await idle();
   await evaluate("void __demo.play(" + qi + ")");
   await sleep(4200);
-  await check("mid detailed product (2 decimals)");
+  await check("mid detailed product (2 decimals)", { geometry: false });
   await shot("1920x1080", "mid-query-2dp.png");
   await idle();
   await evaluate("__demo.toggleCalc()"); // replays the current beat with 3 decimals
   await sleep(5200);
-  await check("mid detailed product (3 decimals)");
+  await check("mid detailed product (3 decimals)", { geometry: false });
   await shot("1920x1080", "mid-query-3dp.png");
   await idle();
   await check("query, show calculation");
@@ -198,7 +234,7 @@ try {
   await evaluate(`__demo.goto(${kvi - 1}, 0)`); await idle();
   await evaluate("void __demo.play(" + kvi + ")");
   await sleep(2000);
-  await check("mid key/value detailed products (3 decimals)");
+  await check("mid key/value detailed products (3 decimals)", { geometry: false });
   await shot("1920x1080", "mid-keyvalue-3dp.png");
   await idle();
   await check("key/value, show calculation");
@@ -209,6 +245,30 @@ try {
   await shot("1920x1080", "detail-3dp.png");
   await evaluate("__demo.toggleCalc()"); await idle();
   if (await evaluate("__demo.showCalc")) fail("show calculation did not toggle off");
+
+  // ---------------------------------------------------------------- Scenes 5–7: mid-animation states (2 and 3 decimals)
+  console.log("scenes 5–7 mid-animation");
+  const capture = async (id, ms, name) => {
+    const i = beats.findIndex((b) => b.id === id);
+    await evaluate(`__demo.goto(${i - 1}, 0)`); await idle();
+    await evaluate(`void __demo.play(${i})`);
+    await sleep(ms);
+    await check(`mid ${id}${name.includes("3dp") ? " (3 decimals)" : ""}`, { geometry: false });
+    await shot("1920x1080", name);
+    await idle();
+    await check(`end ${id}`);
+  };
+  await evaluate("__demo.speed(1)");
+  for (const [id, ms] of [["dot", 4200], ["allscores", 1300], ["scale", 900], ["softmax", 1300], ["product", 3300], ["products", 1200], ["flow", 2600]]) await capture(id, ms, `mid-${id}.png`);
+  await evaluate("__demo.toggleCalc()"); await sleep(100); await idle();
+  for (const [id, ms] of [["dot", 5600], ["softmax", 2600], ["product", 4300]]) await capture(id, ms, `mid-${id}-3dp.png`);
+  await shot("1920x1080", "product-3dp-end.png");
+  const si = beats.findIndex((b) => b.id === "softmax");
+  await evaluate(`__demo.goto(${si}, 0)`); await idle();
+  await check("softmax end (3 decimals)");
+  await shot("1920x1080", "softmax-3dp-end.png");
+  await evaluate("__demo.toggleCalc()"); await sleep(100); await idle();
+  await evaluate("__demo.speed(6)");
 
   // ---------------------------------------------------------------- real keyboard input (presenter clickers send PageUp/PageDown)
   console.log("keyboard & panels");
