@@ -297,22 +297,70 @@ const ampOf = (fanIn) => Math.sqrt(3 / fanIn);
 const closeRows = (A, B, tol, msg) => A.forEach((row, i) => row.forEach((v, c) => assert.ok(Math.abs(v - B[i][c]) <= tol, `${msg} [${i}][${c}]: ${v} vs ${B[i][c]}`)));
 const lnRef = (x) => { const m = x.reduce((a, b) => a + b, 0) / x.length, v = x.reduce((a, b) => a + (b - m) ** 2, 0) / x.length; return x.map((u) => (u - m) / Math.sqrt(v + E.CONFIG.lnEps)); };
 
-test("decoder dive reuses Scene 10's example: s and t come from its token arrays", () => {
-  const T = E.TRANSLATION;
-  same(DD.source, T.source, "source = Scene 10's source sentence");
-  assert.equal(DD.M.length, T.source.length, "s = number of source tokens");
-  same(DD.prefix, ["<START>", T.target[0]], "step 2 prefix: <START> + the first generated token");
-  same(DD.generated, [...T.target, E.DECODER_DIVE.end], "generation runs through the target to the end token");
+test("decoder dive continues from the guided sentence (not Scene 10's shorter example): 8 source positions", () => {
+  const T = E.DECODER_DIVE.target;
+  same(DD.source, tokens, "source = the guided sentence followed since Scene 1");
+  assert.equal(DD.source.length, 8);
+  assert.notDeepEqual([...DD.source], [...E.TRANSLATION.source], "not Scene 10's example");
+  assert.equal(DD.M.length, tokens.length, "the memory has one row per source position");
+  same(DD.prefix, ["<START>", T[0]], "step 2 prefix: <START> + the first generated token");
+  same(DD.generated, [...T, E.DECODER_DIVE.end], "generation runs through the translation to the end token");
+  assert.equal(T.join(" "), "L' animal s' est arrêté parce qu' il était fatigué .", "a translation of the guided sentence");
   DD.next.forEach((nx, k) => {
-    assert.equal(nx.vocab[0], T.target[k], `step ${k + 1}: the most probable token is the example's next word`);
+    assert.equal(nx.vocab[0], T[k], `step ${k + 1}: the most probable token is the translation's next word`);
     assert.equal(nx.probs.indexOf(Math.max(...nx.probs)), 0);
     assert.ok(Math.abs(nx.probs.reduce((a, b) => a + b, 0) - 1) < 1e-14);
   });
 });
 
+test("encoder memory: the epilogue's X (8 × 512) through six encoder layers — 8 × 8 scores per head, memory 8 × 512", () => {
+  const enc = DD.enc, n = tokens.length, { dModel, nHeads, dK, dV, layers } = PDc;
+  same(enc.tokens, tokens);
+  assert.deepEqual(shapeOf(enc.X0), [n, dModel], "encoder input 8 × 512");
+  enc.X0.forEach((x, i) => same(x, PAPER.X[i], "the epilogue's X = E + PE"));
+  assert.equal(enc.layers.length, layers, "six encoder layers");
+  enc.layers.forEach((Ly, l) => {
+    Ly.self.heads.forEach((H) => {
+      for (const k of ["Q", "K", "V", "Z"]) assert.deepEqual(shapeOf(H[k]), [n, k === "V" || k === "Z" ? dV : dK], `layer ${l + 1} ${k}: 8 × 64`);
+      for (const k of ["raw", "A"]) assert.deepEqual(shapeOf(H[k]), [n, n], `layer ${l + 1} scores: 8 × 8`);
+      H.A.forEach((row) => assert.ok(Math.abs(row.reduce((a, b) => a + b, 0) - 1) < 1e-14));
+    });
+    assert.equal(Ly.self.heads.length, nHeads);
+    assert.deepEqual(shapeOf(Ly.self.Concat), [n, nHeads * dV], "8 heads × 64 = 512");
+    for (const k of ["N1", "F", "N2"]) assert.deepEqual(shapeOf(Ly[k]), [n, dModel]);
+    assert.deepEqual(shapeOf(Ly.H), [n, PDc.dFF], "FFN 512 → 2048");
+    closeRows(Ly.N1, Ly.X.map((x, i) => lnRef(x.map((u, c) => u + Ly.self.out[i][c]))), 1e-12, "post-LN after attention");
+    closeRows(Ly.N2, Ly.N1.map((x, i) => lnRef(x.map((u, c) => u + Ly.F[i][c]))), 1e-12, "post-LN after the FFN");
+  });
+  // layer 1's attention is the epilogue's, bit for bit; the memory is the output of layer 6
+  enc.layers[0].self.heads.forEach((H, h) => { same(H.A.flat(), PAPER.heads[h].A.flat(), `head ${h + 1} weights`); same(H.Z.flat(), PAPER.heads[h].Z.flat()); });
+  enc.layers[0].self.out.forEach((o, i) => same(o, PAPER.MH[i], "MultiHead of encoder layer 1 = the epilogue's"));
+  assert.deepEqual(shapeOf(DD.M), [n, dModel], "memory E ∈ R^{8×512}");
+  DD.M.forEach((m, i) => same(m, enc.out[i], "the decoder reads the encoder's output"));
+  same(enc.out.flat(), enc.layers[layers - 1].N2.flat());
+  // the eight memory rows stay distinct (no rank collapse) and each still relates to its own position
+  const cos = (u, v) => { let d = 0, a = 0, b = 0; for (let c = 0; c < u.length; c++) { d += u[c] * v[c]; a += u[c] ** 2; b += v[c] ** 2; } return d / Math.sqrt(a * b); };
+  let pair = 0, np = 0;
+  for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) { pair += cos(DD.M[i], DD.M[j]); np++; }
+  assert.ok(pair / np < 0.8, `memory rows stay distinct (mean cosine ${(pair / np).toFixed(3)})`);
+  DD.M.forEach((m, i) => assert.ok(cos(m, enc.X0[i]) > 0.3, `row ${i + 1} keeps its own position's identity`));
+});
+
+test("residual branches: each stack's first self-attention at the plain scale, the deeper branches at 1/√(2N)", () => {
+  const a = ampOf(512), g = 1 / Math.sqrt(2 * PDc.layers);
+  assert.equal(E.BRANCH_SCALE, g);
+  const enc = DD.enc.layers, dec = DD.layers;
+  enc[1].self.out.forEach((o, i) => same(o, plainRowTimes(enc[1].self.Concat[i], E.paperMatrix("EN1S:WO", 512, 512, a * g)), "encoder layer 2 W^O"));
+  enc[0].F.forEach((f, i) => same(f, plainRowTimes(enc[0].H[i], E.paperMatrix("EN0F:W2", 2048, 512, ampOf(2048) * g)).map((u, c) => u + E.paperUniform("EN0F:b2", 512, 0.1)[c]), "encoder layer 1 W₂"));
+  dec[0].self.out.forEach((o, i) => same(o, plainRowTimes(dec[0].self.Concat[i], E.paperMatrix("D0S:WO", 512, 512, a)), "decoder layer 1 masked self-attention: plain scale (shown in full)"));
+  dec[0].cross.out.forEach((o, i) => same(o, plainRowTimes(dec[0].cross.Concat[i], E.paperMatrix("D0C:WO", 512, 512, a * g)), "decoder cross-attention W^O"));
+  dec[1].self.out.forEach((o, i) => same(o, plainRowTimes(dec[1].self.Concat[i], E.paperMatrix("D1S:WO", 512, 512, a * g)), "decoder layer 2 W^O"));
+});
+
 test("decoder dive: shapes at every stage (paper base model: 512, 8 × 64, 2048, N = 6)", () => {
   const t = DD.prefix.length, s = DD.source.length, { dModel, nHeads, dK, dV, dFF, layers } = PDc;
   assert.deepEqual([dModel, nHeads, dK, dV, dFF, layers], [512, 8, 64, 64, 2048, 6]);
+  assert.equal(s, 8, "cross-attention reads the 8 source positions: scores t × 8, K and V 8 × 64");
   assert.deepEqual(shapeOf(DD.M), [s, dModel], "encoder output s × 512");
   for (const k of ["raw", "emb", "P", "X0", "out"]) assert.deepEqual(shapeOf(DD[k]), [t, dModel], `${k}: t × 512`);
   assert.equal(DD.layers.length, layers, "six decoder layers");
@@ -393,7 +441,7 @@ test("decoder dive: Concat · W^O (512 → 512), post-LN Add & Norm, FFN 512 →
   Ly.Hpre.forEach((hp, i) => same(hp, plainRowTimes(Ly.N2[i], W1).map((u, c) => u + b1[c]), "zW₁ + b₁"));
   Ly.H.forEach((h, i) => same(h, Ly.Hpre[i].map((u) => Math.max(0, u)), "ReLU"));
   assert.ok(Ly.H[0].some((u) => u === 0) && Ly.H[0].some((u) => u > 0), "ReLU zeroes some units, not all");
-  const W2 = E.paperMatrix("D0F:W2", 2048, 512, ampOf(2048)), b2 = E.paperUniform("D0F:b2", 512, 0.1);
+  const W2 = E.paperMatrix("D0F:W2", 2048, 512, ampOf(2048) * E.BRANCH_SCALE), b2 = E.paperUniform("D0F:b2", 512, 0.1);
   Ly.F.forEach((f, i) => same(f, plainRowTimes(Ly.H[i], W2).map((u, c) => u + b2[c]), "FFN(z) = ReLU(·)W₂ + b₂"));
   // the decoder input: embedding row, × √512 (§3.4), + PE (§3.5)
   DD.emb.forEach((e, i) => e.forEach((u, c) => assert.equal(u, DD.raw[i][c] * Math.sqrt(512))));

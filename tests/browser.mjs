@@ -343,7 +343,7 @@ try {
   for (const [id, ms] of [["heads", 1400], ["head2", 2600], ["concat", 1500], ["wo", 2000], ["block", 1600], ["residual", 2600], ["ffn", 3800], ["stack", 1200],
     ["zoom", 1800], ["example", 1500], ["decoder", 2200], ["mask", 3600], ["cross", 3200], ["output", 2600], ["loop", 2600], ["final", 2600], ["explore", 900]]) await capture(id, ms, `mid-${id}.png`);
   console.log("decoder branch mid-animation");
-  for (const [id, ms] of [["d-start", 1500], ["d-start", 3200], ["d-heads", 1800], ["d-t1", 2100], ["d-concat", 1300], ["d-cross", 2300], ["d-scores", 2600], ["d-values", 700],
+  for (const [id, ms] of [["d-memory", 1100], ["d-memory", 2600], ["d-start", 1500], ["d-start", 3200], ["d-heads", 1800], ["d-t1", 2100], ["d-concat", 1300], ["d-cross", 2300], ["d-scores", 2600], ["d-values", 700],
     ["d-values", 3600], ["d-ffn", 2200], ["d-layers", 900], ["d-layers", 3000], ["d-token", 4600], ["d-token", 6300], ["d-mask", 3300], ["d-mask", 5600], ["d-next", 5200], ["d-next", 7400], ["d-summary", 1600]])
     await capture(id, ms, `mid-${id}-${ms}.png`);
   console.log("epilogue mid-animation");
@@ -454,7 +454,8 @@ try {
 
   // ---------------------------------------------------------------- optional branch: inside the decoder — paper sizes, honest labels
   console.log("decoder branch content");
-  const ex = await evaluate("__demo.decoderExample"), sLen = ex.source.length;
+  const ex = await evaluate("__demo.decoderExample"), sLen = ex.source.length, TOKS = ex.source;
+  let snap; // object-state snapshots of branch beats
   const srcs = async (re) => (await shownSrc(re)).map(([x]) => x);
   const lastIdx = (list) => list.map((x) => x.split(".").pop()).join();
   const need = async (where, texts) => { for (const t of texts) if (!(await shownText(t))) fail(`${where}: "${t}" should be on screen`); };
@@ -465,12 +466,30 @@ try {
     if ((await evaluate("document.querySelector('#l-hud').textContent")).includes("/ 1")) fail(`${beats[i].id}: the optional branch must not be numbered as a guided scene`);
     if (!(await evaluate("document.getElementById('dd-btn').hidden"))) fail(`${beats[i].id}: the branch button belongs to the end of the epilogue only`);
   }
-  if (ex.source.join(" ") !== "The animal is tired ." || ex.prefix.join(" ") !== "<START> L'") fail(`the branch must reuse Scene 10's example, got ${JSON.stringify(ex)}`);
+  // the deep dive continues from the guided sentence — never from Scene 10's shorter example
+  if (ex.source.join(" ") !== "The animal stopped because it was tired ." || ex.prefix.join(" ") !== "<START> L'") fail(`the branch must continue from the guided sentence, got ${JSON.stringify(ex)}`);
+  for (let i = BR0; i <= BR1; i++) {
+    await at(beats[i].id);
+    snap = await evaluate("__demo.snapshot()");
+    if (snap["stok:is"]) fail(`${beats[i].id}: Scene 10's source token "is" must not appear in the branch`);
+    const stale = await evaluate(`[...document.querySelectorAll("#stage text")].filter((t) => { let o = 1; for (let n = t; n && n.id !== "stage"; n = n.parentNode) { if (!n.style) continue; if (n.style.visibility === "hidden") return false; if (n.style.opacity !== "") o *= Number(n.style.opacity); } return o > 0.3; })
+      .map((t) => t.textContent.replace(/\\s+/g, " ")).filter((x) => /s ?×|× ?s\\b|s = 5|\\b5 ?×|× ?5\\b|The animal is tired/.test(x))`);
+    if (stale.length) fail(`${beats[i].id}: source-length labels from Scene 10's example remain: ${JSON.stringify(stale.slice(0, 3))}`);
+    const srcRows = TOKS.filter((w, j) => snap[`tok:${j}`]);
+    if (srcRows.length && srcRows.length !== 8) fail(`${beats[i].id}: when the source is shown, all 8 guided tokens are (got ${srcRows.length})`);
+  }
+  await at("d-memory");
+  await need("d-memory", ["Now continue from the encoder representation we have been following.", "ENCODER MEMORY", "E ∈ ℝ8×512", "QKT: 8 × 8 per head", "6 encoder layers",
+    ...TOKS.filter((w) => w !== ".")]);
+  if ((await srcs("/^dd\\.M\\.\\d\\.\\d+$/")).length !== 32) fail("d-memory: E ∈ R^{8×512} should show 4 entries of each of its 8 rows");
+  snap = await evaluate("__demo.snapshot()");
+  if (TOKS.some((w, j) => !(snap[`tok:${j}`]?.o > 0.9))) fail("d-memory: the encoder's input should be the 8 guided tokens");
+  if (!snap["dtok:0"] || ["dtok:1", "dtok:2", "dtok:3", "dtok:4"].some((id) => snap[id])) fail("d-memory: the decoder has only <START>");
   await at("d-start");
   await need("d-start", ["At the first generation step, the decoder only has <START>.", "1 × 512", "√512 = 22.63", "embedding(<START>)", "PE(pos = 0)"]);
   if (lastIdx(await srcs("/^dd\\.X0\\.0\\.\\d+$/")) !== "0,1,2,511") fail("d-start: x_START should show entries 1, 2, 3 and 512");
   if ((await srcs("/^dd\\.(raw|emb|P)\\.0\\.\\d+$/")).length !== 12) fail("d-start: the embedding, × √512 and PE rows should each show 4 entries");
-  let snap = await evaluate("__demo.snapshot()");
+  snap = await evaluate("__demo.snapshot()");
   if (!snap["dtok:0"] || ["dtok:1", "dtok:2", "dtok:3", "dtok:4"].some((id) => snap[id])) fail("d-start: the decoder input must be <START> alone");
   await at("d-heads");
   snap = await evaluate("__demo.snapshot()");
@@ -495,12 +514,12 @@ try {
   if ((await rowsOf("/^dd\\.M\\.\\d\\.\\d+$/")) !== sLen) fail(`d-cross: the encoder output should show s = ${sLen} rows`);
   for (const b of ["K", "V"]) if ((await rowsOf(`/^dd\\.layers\\.0\\.cross\\.heads\\.0\\.${b}\\.\\d\\.\\d+$/`)) !== sLen) fail(`d-cross: ${b} should have one row per source token (s × 64)`);
   if ((await srcs("/^dd\\.layers\\.0\\.cross\\.heads\\.0\\.Q\\.0\\.\\d+$/")).length !== 3) fail("d-cross: q (1 × 64) should be shown");
-  await need("d-cross", ["Q from decoder · K,V from encoder", "ENCODER OUTPUT", "DECODER STATE", `s = ${sLen}`, "(s×512)(512×64) → s×64", "(1×512)(512×64) → 1×64", "K = E WK", "V = E WV", "q = y WQ", ...ex.source.filter((w) => w !== ".")]);
+  await need("d-cross", ["Q from decoder · K,V from encoder", "ENCODER MEMORY", "DECODER STATE", "E ∈ ℝ8×512", "(8×512)(512×64) → 8×64", "(1×512)(512×64) → 1×64", "K = E WK", "V = E WV", "q = y WQ", ...ex.source.filter((w) => w !== ".")]);
   await at("d-scores");
   const al = await shownSrc("/^dd\\.layers\\.0\\.cross\\.heads\\.0\\.A\\.0\\.\\d$/");
   if (al.length !== sLen) fail(`d-scores: one weight per source token (1 × s), got ${al.length}`);
   if (Math.abs(al.reduce((a, [, t]) => a + num(t), 0) - 1) > 0.03) fail("d-scores: the shown weights should sum to 1");
-  await need("d-scores", ["illustrative cross-attention weights", "(1×64)(64×s) → 1×s", "Σ αj = 1.00", "softmax(qKT / √64)"]);
+  await need("d-scores", ["illustrative cross-attention weights", "(1×64)(64×8) → 1×8", "Σ αj = 1.00", "softmax(qKT / √64)"]);
   if ((await evaluate(`[...document.querySelectorAll("#stage [data-kind=cbar]")].filter((e) => e.closest("g").style.visibility !== "hidden").length`)) !== sLen) fail("d-scores: one bar per source token, drawn from its α");
   await at("d-values");
   const ws = await evaluate(`[...document.querySelectorAll("#stage [data-kind=wire]")].filter((e) => e.closest("g").style.visibility !== "hidden").map((e) => e.dataset.alpha)`);
@@ -529,17 +548,19 @@ try {
   if (Math.abs(num(gm["dd.layers.0.self.heads.0.A.1.0"]) + num(gm["dd.layers.0.self.heads.0.A.1.1"]) - 1) > 0.011) fail("d-mask: the second row sums to 1");
   if (!(await evaluate(`[...document.querySelectorAll("#stage [data-src='dd.layers.0.self.heads.0.A.0.1']")].some((e) => e.classList.contains("masked"))`))) fail("d-mask: the masked cell should be styled as masked");
   if ((await shownSrc("/^dd\\.layers\\.0\\.cross\\.heads\\.0\\.A\\.[01]\\.\\d$/")).length !== 2 * sLen) fail("d-mask: the cross-attention weights should be 2 × s");
-  await need("d-mask", ["Now the causal mask matters.", "ℝ2×512", "ℝ2×64", "(2×64)(64×2) → 2×2", "1 × s → 2 × s", "(2×64)(64×s) → 2×s"]);
+  await need("d-mask", ["Now the causal mask matters.", "ℝ2×512", "ℝ2×64", "(2×64)(64×2) → 2×2", "1 × 8 → 2 × 8", "(2×64)(64×8) → 2×8", "8 × 64 from the encoder memory"]);
   await at("d-next");
   if (!(await srcs("/^dd\\.out\\.1\\.\\d+$/")).length || !(await srcs("/^dd\\.out\\.0\\.\\d+$/")).length) fail("d-next: both rows of the 2 × 512 output should be shown");
   if ((await srcs("/^dd\\.next\\.1\\.probs\\.\\d$/")).length !== 5) fail("d-next: the step-2 distribution should be shown");
   snap = await evaluate("__demo.snapshot()");
   const rowWords = (ids) => ids.map((id) => snap[id]).filter(Boolean).sort((a, b) => a.x - b.x).map((t) => t.text).join(" ");
-  if (rowWords(["outl:0", "outl:1", "outl:2", "dd:o3", "dd:o4", "dd:o5"]) !== ex.generated.join(" ")) fail(`d-next: the output should read "${ex.generated.join(" ")}"`);
-  if (rowWords(["dtok:0", "dtok:1", "dtok:2", "dtok:3", "dtok:4", "dd:i5"]) !== ["<START>", ...ex.generated.slice(0, -1)].join(" ")) fail("d-next: the decoder input is the output shifted right by one");
+  const outIds = ["outl:0", "outl:1", ...ex.generated.slice(2).map((_, k) => `dd:o${k + 2}`)], inIds = ["dtok:0", "dtok:1", "dtok:2", ...ex.generated.slice(3).map((_, k) => `dd:i${k + 3}`)];
+  if (rowWords(outIds) !== ex.generated.join(" ")) fail(`d-next: the output should read "${ex.generated.join(" ")}", got "${rowWords(outIds)}"`);
+  if (rowWords(inIds) !== ["<START>", ...ex.generated.slice(0, -1)].join(" ")) fail("d-next: the decoder input is the output shifted right by one");
+  if (ex.generated.join(" ") !== "L' animal s' est arrêté parce qu' il était fatigué . <END>") fail("d-next: the decoder translates the guided sentence");
   await need("d-next", ["Generation uses the representation at the newest decoder position.", "after 6 layers", "generation stops"]);
   await at("d-summary");
-  await need("d-summary", ["t × 512", "scores t × t", "scores t × s", "s × 64 (encoder)", "t × 2048", "× 6, each with its own weights", "1 × |Vocab|", `s = ${sLen}`,
+  await need("d-summary", ["8 × 512", "scores 8 × 8", "6 encoder layers → memory E", "t × 512", "scores t × t", "scores t × 8", "8 × 64 (memory E)", "t × 2048", "each with its own weights", "1 × |Vocab|",
     "Masked self-attention mixes information across the output generated so far.", "Cross-attention brings information in from the encoded input."]);
 
   // ---------------------------------------------------------------- fullscreen (F) keeps the stage intact

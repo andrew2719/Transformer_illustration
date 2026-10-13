@@ -182,8 +182,9 @@ print(f"compared {count} arrays; max |python - js| = {worst:.3e}")
 if worst > 1e-12:
     sys.exit("MISMATCH between the independent reference and the page engine")
 
-# ---- optional branch: inside the decoder, at the paper's sizes (d_model 512, h 8, d_k = d_v 64, d_ff 2048, N = 6),
-# on the Scene 10 example. About 25 million seeded weights, so this part uses numpy; the generator is vectorised
+# ---- optional branch: inside the decoder, at the paper's sizes (d_model 512, h 8, d_k = d_v 64, d_ff 2048, N = 6).
+# It continues from the guided sentence: the epilogue's X goes through six encoder layers into the memory the decoder
+# reads. About 45 million seeded weights, so this part uses numpy; the generator is vectorised
 # from its definition: mulberry32's state after k draws is seed + k·0x6D2B79F5 (mod 2^32), and each output is a
 # fixed function of that state. Matrix products here sum in a different order than the page, hence a looser bound.
 try:
@@ -223,11 +224,15 @@ def softmax_rows(S):
     return e / e.sum(axis=-1, keepdims=True)
 
 
-def mha(Xq, Xkv, tag, causal=False, variant=lambda h: ""):
+G_BRANCH = 1 / math.sqrt(2 * N_LAYERS)  # residual-branch output projections beyond each stack's first self-attention
+assert abs(dive["branchScale"] - G_BRANCH) < 1e-15
+
+
+def mha(Xq, Xkv, tag, causal=False, variant=lambda h: "", out_scale=1.0, epilogue_tags=False):
     a, heads = math.sqrt(3 / P_MODEL), []
+    name = (lambda w, h: f"{w}{h}") if epilogue_tags else (lambda w, h: f"{tag}:{w}{h}" + ("" if w == "WV" else variant(h)))
     for h in range(P_HEADS):
-        v = variant(h)
-        Q, K, V = Xq @ seeded(f"{tag}:WQ{h}{v}", P_MODEL, P_DK, a), Xkv @ seeded(f"{tag}:WK{h}{v}", P_MODEL, P_DK, a), Xkv @ seeded(f"{tag}:WV{h}", P_MODEL, P_DV, a)
+        Q, K, V = Xq @ seeded(name("WQ", h), P_MODEL, P_DK, a), Xkv @ seeded(name("WK", h), P_MODEL, P_DK, a), Xkv @ seeded(name("WV", h), P_MODEL, P_DV, a)
         raw = Q @ K.T
         scaled = raw / math.sqrt(P_DK)
         if causal:  # position i may attend to j <= i; the future gets -inf before softmax (paper section 3.2.3)
@@ -235,7 +240,13 @@ def mha(Xq, Xkv, tag, causal=False, variant=lambda h: ""):
         A = softmax_rows(scaled)
         heads.append(dict(Q=Q, K=K, V=V, raw=raw, scaled=scaled, A=A, Z=A @ V))
     concat = np.concatenate([hd["Z"] for hd in heads], axis=1)
-    return heads, concat, concat @ seeded(f"{tag}:WO", P_HEADS * P_DV, P_MODEL, math.sqrt(3 / (P_HEADS * P_DV)))
+    return heads, concat, concat @ seeded("WO" if epilogue_tags else f"{tag}:WO", P_HEADS * P_DV, P_MODEL, math.sqrt(3 / (P_HEADS * P_DV)) * out_scale)
+
+
+def ffn(X, tag, out_scale):
+    Hpre = X @ seeded(f"{tag}:W1", P_MODEL, D_FF, math.sqrt(3 / P_MODEL)) + uniform_np(f"{tag}:b1", D_FF, 0.1)
+    H = np.maximum(0.0, Hpre)
+    return Hpre, H, H @ seeded(f"{tag}:W2", D_FF, P_MODEL, math.sqrt(3 / D_FF) * out_scale) + uniform_np(f"{tag}:b2", P_MODEL, 0.1)
 
 
 def npdiff(ref, js):
@@ -249,7 +260,25 @@ def npdiff(ref, js):
 worst_d, count_d = 0.0, 0
 src, prefix = dive["source"], dive["prefix"]
 t_len, s_len = len(prefix), len(src)
-M = np.array([ln(uniform_np(f"ENC:{w.lower()}", P_MODEL, 1.0)) for w in src])
+assert src == tokens and s_len == 8, "the decoder reads the guided sentence's 8 positions"
+# the encoder: layer 1's attention is the epilogue's (its weights, plain W^O); its output is the memory E (8 x 512)
+Xe = np.array(pX)
+for layer in range(N_LAYERS):
+    js = dive["enc"]["layers"][layer]
+    heads, cat, out = mha(Xe, Xe, f"EN{layer}S", out_scale=1.0 if layer == 0 else G_BRANCH, epilogue_tags=(layer == 0))
+    N1 = ln(Xe + out)
+    _, H, F = ffn(N1, f"EN{layer}F", G_BRANCH)
+    N2 = ln(N1 + F)
+    for hd in heads:
+        assert hd["A"].shape == (s_len, s_len), "encoder self-attention scores are 8 x 8 per head"
+    worst_d = max(worst_d, npdiff(out, js["MH"]), npdiff(N1, js["N1"]), npdiff(H, js["H"]), npdiff(F, js["F"]), npdiff(N2, js["N2"])); count_d += 5
+    for h, hd in enumerate(heads):
+        worst_d = max(worst_d, npdiff(hd["A"], js["A"][h])); count_d += 1
+    if layer == 0:
+        worst_d = max(worst_d, npdiff(out, paper["MH"])); count_d += 1  # = the epilogue's MultiHead
+    Xe = N2
+M = Xe
+assert M.shape == (8, P_MODEL), "memory E is 8 x 512"
 root = math.sqrt(P_MODEL)
 raw = np.array([uniform_np(f"E:{w.lower()}", P_MODEL, 1.0) / root for w in prefix])
 emb = raw * root
@@ -258,13 +287,11 @@ for key, ref in (("M", M), ("raw", raw), ("emb", emb), ("X0", X)):
     worst_d = max(worst_d, npdiff(ref, dive[key])); count_d += 1
 for layer in range(N_LAYERS):
     js = dive["layers"][layer]
-    s_heads, s_cat, s_out = mha(X, X, f"D{layer}S", causal=True)
+    s_heads, s_cat, s_out = mha(X, X, f"D{layer}S", causal=True, out_scale=1.0 if layer == 0 else G_BRANCH)
     N1 = ln(X + s_out)
-    c_heads, c_cat, c_out = mha(N1, M, f"D{layer}C", variant=lambda h: dive["crossSeed"] if (layer == 0 and h == 0) else "")
+    c_heads, c_cat, c_out = mha(N1, M, f"D{layer}C", variant=lambda h: dive["crossSeed"] if (layer == 0 and h == 0) else "", out_scale=G_BRANCH)
     N2 = ln(N1 + c_out)
-    Hpre = N2 @ seeded(f"D{layer}F:W1", P_MODEL, D_FF, math.sqrt(3 / P_MODEL)) + uniform_np(f"D{layer}F:b1", D_FF, 0.1)
-    H = np.maximum(0.0, Hpre)
-    F = H @ seeded(f"D{layer}F:W2", D_FF, P_MODEL, math.sqrt(3 / D_FF)) + uniform_np(f"D{layer}F:b2", P_MODEL, 0.1)
+    Hpre, H, F = ffn(N2, f"D{layer}F", G_BRANCH)
     N3 = ln(N2 + F)
     for key, ref in (("X", X), ("N1", N1), ("N2", N2), ("Hpre", Hpre), ("H", H), ("F", F), ("N3", N3)):
         worst_d = max(worst_d, npdiff(ref, js[key])); count_d += 1
@@ -275,6 +302,8 @@ for layer in range(N_LAYERS):
             for key in ("Q", "K", "V", "raw", "scaled", "A", "Z"):
                 worst_d = max(worst_d, npdiff(hd[key], js[name]["heads"][h][key])); count_d += 1
         assert cat.shape == (t_len, P_HEADS * P_DV) == (t_len, P_MODEL), "8 x 64 concatenates to 512"
+    for hd in c_heads:
+        assert hd["Q"].shape == (t_len, P_DK) and hd["K"].shape == (8, P_DK) and hd["V"].shape == (8, P_DV) and hd["A"].shape == (t_len, 8), "cross: Q t x 64, K/V 8 x 64, scores t x 8"
     for h, hd in enumerate(s_heads):
         assert hd["A"][0, 1] == 0.0 and js["self"]["heads"][h]["A"][0][1] == 0.0, "the masked future weight is exactly 0"
     X = N3

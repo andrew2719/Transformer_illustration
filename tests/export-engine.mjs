@@ -30,7 +30,8 @@ const DV = E.paperDecoder();
 const inf = (M) => M.map((r) => r.map((x) => (x === -Infinity ? null : x)));
 const att = (a) => ({ heads: a.heads.map((H) => ({ Q: H.Q, K: H.K, V: H.V, raw: H.raw, scaled: inf(H.scaled), A: H.A, Z: H.Z })), Concat: a.Concat, out: a.out });
 const dive = {
-  crossSeed: E.DECODER_DIVE.crossSeed, source: DV.source, prefix: DV.prefix, M: DV.M, raw: DV.raw, emb: DV.emb, P: DV.P, X0: DV.X0, out: DV.out,
+  crossSeed: E.DECODER_DIVE.crossSeed, branchScale: E.BRANCH_SCALE, source: DV.source, prefix: DV.prefix, M: DV.M, raw: DV.raw, emb: DV.emb, P: DV.P, X0: DV.X0, out: DV.out,
+  enc: { X0: DV.enc.X0, layers: DV.enc.layers.map((L) => ({ A: L.self.heads.map((H) => H.A), MH: L.self.out, N1: L.N1, H: L.H, F: L.F, N2: L.N2 })) },
   layers: DV.layers.map((L) => ({ X: L.X, self: att(L.self), N1: L.N1, cross: att(L.cross), N2: L.N2, Hpre: L.Hpre, H: L.H, F: L.F, N3: L.N3 })),
   next: DV.next.map((n) => ({ t: n.t, row: n.row, logits: n.logits, probs: n.probs })), logits: E.DECODER_DIVE.next,
 };
