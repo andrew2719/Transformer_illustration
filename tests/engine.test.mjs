@@ -288,3 +288,148 @@ test("paper scale values are deterministic, readable, illustrative — and not t
   // the locked toy model is untouched by the epilogue
   assert.deepEqual(JSON.parse(JSON.stringify(E.PARAMS)), fixture.params);
 });
+
+// ---------------------------------------------------------------- optional branch: inside the decoder, at paper scale
+const DD = E.paperDecoder();
+const PDc = E.CONFIG.paper;
+const shapeOf = (M) => [M.length, M[0].length];
+const ampOf = (fanIn) => Math.sqrt(3 / fanIn);
+const closeRows = (A, B, tol, msg) => A.forEach((row, i) => row.forEach((v, c) => assert.ok(Math.abs(v - B[i][c]) <= tol, `${msg} [${i}][${c}]: ${v} vs ${B[i][c]}`)));
+const lnRef = (x) => { const m = x.reduce((a, b) => a + b, 0) / x.length, v = x.reduce((a, b) => a + (b - m) ** 2, 0) / x.length; return x.map((u) => (u - m) / Math.sqrt(v + E.CONFIG.lnEps)); };
+
+test("decoder dive reuses Scene 10's example: s and t come from its token arrays", () => {
+  const T = E.TRANSLATION;
+  same(DD.source, T.source, "source = Scene 10's source sentence");
+  assert.equal(DD.M.length, T.source.length, "s = number of source tokens");
+  same(DD.prefix, ["<START>", T.target[0]], "step 2 prefix: <START> + the first generated token");
+  same(DD.generated, [...T.target, E.DECODER_DIVE.end], "generation runs through the target to the end token");
+  DD.next.forEach((nx, k) => {
+    assert.equal(nx.vocab[0], T.target[k], `step ${k + 1}: the most probable token is the example's next word`);
+    assert.equal(nx.probs.indexOf(Math.max(...nx.probs)), 0);
+    assert.ok(Math.abs(nx.probs.reduce((a, b) => a + b, 0) - 1) < 1e-14);
+  });
+});
+
+test("decoder dive: shapes at every stage (paper base model: 512, 8 × 64, 2048, N = 6)", () => {
+  const t = DD.prefix.length, s = DD.source.length, { dModel, nHeads, dK, dV, dFF, layers } = PDc;
+  assert.deepEqual([dModel, nHeads, dK, dV, dFF, layers], [512, 8, 64, 64, 2048, 6]);
+  assert.deepEqual(shapeOf(DD.M), [s, dModel], "encoder output s × 512");
+  for (const k of ["raw", "emb", "P", "X0", "out"]) assert.deepEqual(shapeOf(DD[k]), [t, dModel], `${k}: t × 512`);
+  assert.equal(DD.layers.length, layers, "six decoder layers");
+  DD.layers.forEach((Ly, l) => {
+    const at = (what) => `layer ${l + 1}: ${what}`;
+    for (const k of ["X", "R1", "N1", "R2", "N2", "F", "R3", "N3"]) assert.deepEqual(shapeOf(Ly[k]), [t, dModel], at(`${k} t × 512`));
+    for (const k of ["Hpre", "H"]) assert.deepEqual(shapeOf(Ly[k]), [t, dFF], at(`${k} t × 2048`));
+    for (const [att, kv] of [[Ly.self, t], [Ly.cross, s]]) {
+      assert.equal(att.heads.length, nHeads);
+      att.heads.forEach((H, h) => {
+        assert.deepEqual(shapeOf(H.Q), [t, dK], at(`head ${h + 1} Q t × 64`));
+        assert.deepEqual(shapeOf(H.K), [kv, dK], at(`head ${h + 1} K`));
+        assert.deepEqual(shapeOf(H.V), [kv, dV], at(`head ${h + 1} V`));
+        for (const k of ["raw", "scaled", "A"]) assert.deepEqual(shapeOf(H[k]), [t, kv], at(`head ${h + 1} ${k}: ${att === Ly.self ? "t × t" : "t × s"}`));
+        assert.deepEqual(shapeOf(H.Z), [t, dV], at(`head ${h + 1} output t × 64`));
+      });
+      assert.deepEqual(shapeOf(att.Concat), [t, nHeads * dV], at("Concat: 8 × 64 = 512"));
+      assert.equal(nHeads * dV, dModel);
+      assert.deepEqual(shapeOf(att.out), [t, dModel], at("W^O output t × 512"));
+    }
+  });
+});
+
+test("decoder dive: scores are divided by √d_k = √64 = 8; softmax rows sum to 1", () => {
+  assert.equal(Math.sqrt(PDc.dK), 8);
+  for (const Ly of DD.layers) for (const att of [Ly.self, Ly.cross]) for (const H of att.heads) {
+    H.raw.forEach((row, i) => row.forEach((r, j) => { if (H.scaled[i][j] !== -Infinity) assert.equal(H.scaled[i][j], r / 8); }));
+    H.raw.forEach((row, i) => row.forEach((r, j) => assert.equal(H.unmasked[i][j], r / 8)));
+    H.A.forEach((row) => assert.ok(Math.abs(row.reduce((a, b) => a + b, 0) - 1) < 1e-14));
+  }
+});
+
+test("decoder dive: the causal mask — future logits are −∞, their weights exactly 0; at t = 1 there is nothing to mask", () => {
+  for (const Ly of DD.layers) for (const H of Ly.self.heads) {
+    assert.equal(H.scaled[0][1], -Infinity, "<START> cannot see L'");
+    assert.equal(H.A[0][1], 0, "masked weight is exactly 0");
+    assert.equal(H.A[0][0], 1, "so <START> keeps all of its weight");
+    assert.ok(H.A[1][0] > 0 && H.A[1][1] > 0, "the second position sees both");
+  }
+  for (const Ly of DD.layers) for (const H of Ly.cross.heads) H.A.forEach((row) => row.forEach((a) => assert.ok(a > 0, "cross-attention is not masked")));
+  const one = E.paperDecoder([DD.prefix[0]]);
+  for (const Ly of one.layers) for (const H of Ly.self.heads) { assert.deepEqual(shapeOf(H.A), [1, 1]); assert.equal(H.A[0][0], 1, "softmax([s/8]) = [1]"); same(H.Z[0], H.V[0], "head output = 1 · v"); }
+});
+
+test("decoder dive: causality — row 0 of the two-token run equals the one-token run, bit for bit", () => {
+  const one = E.paperDecoder([DD.prefix[0]]);
+  one.layers.forEach((Ly, l) => {
+    for (const k of ["N1", "N2", "Hpre", "N3"]) same(Ly[k][0], DD.layers[l][k][0], `layer ${l + 1} ${k}[0]`);
+    Ly.cross.heads.forEach((H, h) => same(H.A[0], DD.layers[l].cross.heads[h].A[0], `layer ${l + 1} cross head ${h + 1}`));
+  });
+  same(one.out[0], DD.out[0]);
+});
+
+test("decoder dive: Q from the decoder, K and V from the encoder output; each head projects the whole 512-d row", () => {
+  const Ly = DD.layers[0], a = ampOf(PDc.dModel), v = E.DECODER_DIVE.crossSeed;
+  for (const h of [0, 3]) {
+    const tagQ = `D0C:WQ${h}${h === 0 ? v : ""}`, tagK = `D0C:WK${h}${h === 0 ? v : ""}`, H = Ly.cross.heads[h];
+    const WQ = E.paperMatrix(tagQ, 512, 64, a), WK = E.paperMatrix(tagK, 512, 64, a), WV = E.paperMatrix(`D0C:WV${h}`, 512, 64, a);
+    assert.equal(WQ.length, 512, "W_Q has 512 rows: the whole vector, not a 64-d slice");
+    H.Q.forEach((q, i) => same(q, plainRowTimes(Ly.N1[i], WQ), "Q = (decoder state) · W_Q"));
+    H.K.forEach((k, j) => same(k, plainRowTimes(DD.M[j], WK), "K = (encoder output) · W_K"));
+    H.V.forEach((vv, j) => same(vv, plainRowTimes(DD.M[j], WV), "V = (encoder output) · W_V"));
+  }
+  const S = Ly.self.heads[2], W = E.paperMatrix("D0S:WQ2", 512, 64, a);
+  S.Q.forEach((q, i) => same(q, plainRowTimes(Ly.X[i], W), "masked self-attention: Q from the decoder input"));
+});
+
+test("decoder dive: Concat · W^O (512 → 512), post-LN Add & Norm, FFN 512 → 2048 → ReLU → 512", () => {
+  const Ly = DD.layers[0];
+  const WO = E.paperMatrix("D0S:WO", 512, 512, ampOf(512));
+  Ly.self.Concat.forEach((c, i) => same(c, Ly.self.heads.flatMap((H) => [...H.Z[i]]), "Concat(head_1, …, head_8)"));
+  Ly.self.out.forEach((o, i) => same(o, plainRowTimes(Ly.self.Concat[i], WO), "MultiHead = Concat · W^O"));
+  // post-LN (§3.1): LayerNorm(x + Sublayer(x)) after each of the three sub-layers
+  closeRows(Ly.N1, Ly.X.map((x, i) => lnRef(x.map((u, c) => u + Ly.self.out[i][c]))), 1e-12, "N1 = LN(X + SelfAttn)");
+  closeRows(Ly.N2, Ly.N1.map((x, i) => lnRef(x.map((u, c) => u + Ly.cross.out[i][c]))), 1e-12, "N2 = LN(N1 + CrossAttn)");
+  closeRows(Ly.N3, Ly.N2.map((x, i) => lnRef(x.map((u, c) => u + Ly.F[i][c]))), 1e-12, "N3 = LN(N2 + FFN)");
+  const W1 = E.paperMatrix("D0F:W1", 512, 2048, ampOf(512)), b1 = E.paperUniform("D0F:b1", 2048, 0.1);
+  Ly.Hpre.forEach((hp, i) => same(hp, plainRowTimes(Ly.N2[i], W1).map((u, c) => u + b1[c]), "zW₁ + b₁"));
+  Ly.H.forEach((h, i) => same(h, Ly.Hpre[i].map((u) => Math.max(0, u)), "ReLU"));
+  assert.ok(Ly.H[0].some((u) => u === 0) && Ly.H[0].some((u) => u > 0), "ReLU zeroes some units, not all");
+  const W2 = E.paperMatrix("D0F:W2", 2048, 512, ampOf(2048)), b2 = E.paperUniform("D0F:b2", 512, 0.1);
+  Ly.F.forEach((f, i) => same(f, plainRowTimes(Ly.H[i], W2).map((u, c) => u + b2[c]), "FFN(z) = ReLU(·)W₂ + b₂"));
+  // the decoder input: embedding row, × √512 (§3.4), + PE (§3.5)
+  DD.emb.forEach((e, i) => e.forEach((u, c) => assert.equal(u, DD.raw[i][c] * Math.sqrt(512))));
+  DD.X0.forEach((x, i) => { same(DD.P[i], E.positionalEncoding(i, 512)); x.forEach((u, c) => assert.equal(u, DD.emb[i][c] + DD.P[i][c])); });
+});
+
+test("decoder dive: seededMatMul is the product with the materialised seeded matrix, bit for bit", () => {
+  const X = [E.paperUniform("probe:a", 512, 1), E.paperUniform("probe:b", 512, 1)];
+  for (const [tag, cols] of [["probe:W", 64], ["D0S:WV5", 64]]) same(E.seededMatMul(X, tag, 512, cols, 0.1).map((r) => [...r]).flat(), E.matMulPlain(X, E.paperMatrix(tag, 512, cols, 0.1)).flat());
+});
+
+test("decoder dive: every layer has its own parameters", () => {
+  const a = ampOf(512);
+  for (const w of ["S:WQ0", "C:WK3", "S:WO", "F:W1"]) {
+    const rows = w === "S:WO" ? 512 : 512, cols = w === "F:W1" ? 2048 : w === "S:WO" ? 512 : 64;
+    const first = (l) => [...E.paperMatrix(`D${l}${w}`, rows, cols, a)[0]];
+    for (let l = 1; l < PDc.layers; l++) assert.notDeepEqual(first(l), first(0), `layer ${l + 1} ${w} differs from layer 1`);
+  }
+  for (let l = 1; l < PDc.layers; l++) assert.notDeepEqual([...DD.layers[l].N3[0]], [...DD.layers[l - 1].N3[0]]);
+});
+
+test("decoder dive: the vocabulary projection reads the newest decoder position only", () => {
+  DD.next.forEach((nx, k) => {
+    assert.equal(nx.t, k + 1, "prefix length at that step");
+    assert.equal(nx.row, nx.t - 1, "newest position = last row");
+    same(nx.h, DD.out[nx.row], "h_last = the last row of the decoder output");
+  });
+  const one = E.paperDecoder([DD.prefix[0]]);
+  same(DD.next[0].h, one.out[one.out.length - 1], "step 1: the one-token run's last row");
+});
+
+test("decoder dive values are deterministic, illustrative and readable", () => {
+  assert.equal(JSON.stringify(E.paperDecoder()), JSON.stringify(DD));
+  const big = (M) => Math.max(...M.flat().map(Math.abs));
+  assert.ok(big(DD.X0) < 3 && big(DD.out) < 5, "decoder vectors stay readable");
+  const cross = DD.layers[0].cross.heads[0].A[0];
+  assert.ok(Math.max(...cross) < 0.9 && Math.min(...cross) > 0.005, "illustrative cross weights neither saturated nor vanishing");
+  assert.deepEqual(JSON.parse(JSON.stringify(E.PARAMS)), fixture.params, "the toy model is untouched");
+});

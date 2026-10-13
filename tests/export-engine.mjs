@@ -25,9 +25,18 @@ const nt = E.nextTokenDistribution();
 // epilogue: the paper-scale arrays (illustrative seeded values); the reference regenerates the weights itself
 const P = E.paperScale(tokens);
 const paper = { seed: E.PAPER_SEED, dims: E.CONFIG.paper, X: P.X, heads: P.heads.map((H) => ({ Q: H.Q, K: H.K, V: H.V, A: H.A, Z: H.Z })), Concat: P.Concat, MH: P.MH };
+// optional branch: one decoder at paper scale on the Scene 10 example (seeded illustrative weights)
+const DV = E.paperDecoder();
+const inf = (M) => M.map((r) => r.map((x) => (x === -Infinity ? null : x)));
+const att = (a) => ({ heads: a.heads.map((H) => ({ Q: H.Q, K: H.K, V: H.V, raw: H.raw, scaled: inf(H.scaled), A: H.A, Z: H.Z })), Concat: a.Concat, out: a.out });
+const dive = {
+  crossSeed: E.DECODER_DIVE.crossSeed, source: DV.source, prefix: DV.prefix, M: DV.M, raw: DV.raw, emb: DV.emb, P: DV.P, X0: DV.X0, out: DV.out,
+  layers: DV.layers.map((L) => ({ X: L.X, self: att(L.self), N1: L.N1, cross: att(L.cross), N2: L.N2, Hpre: L.Hpre, H: L.H, F: L.F, N3: L.N3 })),
+  next: DV.next.map((n) => ({ t: n.t, row: n.row, logits: n.logits, probs: n.probs })), logits: E.DECODER_DIVE.next,
+};
 writeFileSync(new URL("tests/fixtures/engine-export.json", root), JSON.stringify({
   sentence: E.GUIDED.sentence, tokens, params: E.PARAMS, conds,
   decoder: { g4: grid(D.inputs), g5: grid([...D.inputs, D.next]), vocab: nt.vocab, nextP: nt.probs },
-  paper,
+  paper, dive,
 }));
 console.log("wrote tests/fixtures/engine-export.json");

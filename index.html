@@ -158,6 +158,9 @@ body.idle #controls, body.idle #timeline { opacity: 0.12; }
 .chip-btn { position: absolute; border: 1px solid rgba(171, 141, 251, 0.35); background: rgba(8, 13, 25, 0.6); color: var(--pe); border-radius: 999px; font: inherit; font-size: max(11px, calc(15 * var(--u))); letter-spacing: 0.06em; padding: max(4px, calc(6 * var(--u))) max(10px, calc(14 * var(--u))); cursor: pointer; transition: opacity 0.4s; }
 .chip-btn[hidden] { display: none; }
 #pe-math-btn { left: calc(44 * var(--u)); top: calc(962 * var(--u)); }
+#dd-btn { right: calc(44 * var(--u)); top: calc(944 * var(--u)); color: var(--ink); border-color: rgba(207, 217, 235, 0.38); }
+#dd-btn:hover { border-color: rgba(207, 217, 235, 0.7); }
+#timeline button.branch { font-style: italic; }
 #explore-ui { position: absolute; left: 50%; top: calc(166 * var(--u)); transform: translateX(-50%); display: flex; gap: calc(26 * var(--u)); align-items: center; font-size: max(11px, calc(16 * var(--u))); white-space: nowrap; }
 #explore-ui[hidden] { display: none; }
 #explore-ui .seg { display: flex; align-items: center; gap: 0; }
@@ -232,6 +235,7 @@ body.exploring .ex-hit:hover { fill: rgba(207, 217, 235, 0.05); }
     </svg>
     <div id="overlay">
       <button id="pe-math-btn" class="chip-btn" type="button" aria-expanded="false" aria-controls="pe-math" hidden>PE formula</button>
+      <button id="dd-btn" class="chip-btn" type="button" title="Optional deep dive (I)" aria-label="Inside the decoder — optional deep dive (I)" hidden>Inside the decoder&nbsp;›</button>
       <div id="pe-math" hidden>
         <div><i>PE</i>(<i>pos</i>, 2<i>i</i>) = sin(<i>pos</i> / 10000<sup>2<i>i</i>/<i>d</i><sub>model</sub></sup>)</div>
         <div><i>PE</i>(<i>pos</i>, 2<i>i</i>+1) = cos(<i>pos</i> / 10000<sup>2<i>i</i>/<i>d</i><sub>model</sub></sup>)</div>
@@ -478,16 +482,19 @@ body.exploring .ex-hit:hover { fill: rgba(207, 217, 235, 0.05); }
   }
 
   // Deterministic pseudo-embedding for words that are not in the toy table (sentence editor).
+  // a local alias: the generator runs millions of times at paper scale, and a global lookup per call is slow in
+  // some hosts (the tests' VM context)
+  const imul = Math.imul;
   function fnv1a(str) {
     let h = 0x811c9dc5;
-    for (const ch of str) { h ^= ch.codePointAt(0); h = Math.imul(h, 0x01000193) >>> 0; }
+    for (const ch of str) { h ^= ch.codePointAt(0); h = imul(h, 0x01000193) >>> 0; }
     return h >>> 0;
   }
   function mulberry32(a) {
     return () => {
       a |= 0; a = (a + 0x6d2b79f5) | 0;
-      let t = Math.imul(a ^ (a >>> 15), 1 | a);
-      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      let t = imul(a ^ (a >>> 15), 1 | a);
+      t = (t + imul(t ^ (t >>> 7), 61 | t)) ^ t;
       return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
     };
   }
@@ -612,6 +619,91 @@ body.exploring .ex-hit:hover { fill: rgba(207, 217, 235, 0.05); }
     return { tokens, E, P, X, heads, Concat, MH };
   }
 
+  // ---------------------------------------------------------------------------- DECODER DEEP DIVE (optional branch)
+  // One autoregressive decoder at the base model's sizes (d_model 512, h 8, d_k = d_v 64, d_ff 2048, N = 6),
+  // run on the Scene 10 translation example. ILLUSTRATIVE seeded weights, every layer its own; the paper's
+  // shapes, causal mask (−∞ before softmax, §3.2.3) and post-LN blocks LayerNorm(x + Sublayer(x)) (§3.1).
+  //  · The encoder output ("memory") is illustrative: seeded rows, layer-normalised like a real encoder output.
+  //  · Decoder input = embedding row (the epilogue's table, shown unscaled, then × √d_model, §3.4) + PE (§3.5).
+  //  · Position 0 never depends on later positions (causality), so one run on DECODER_DIVE.prefix serves both
+  //    generation steps the branch shows; tests check that a run on [<START>] alone gives the same row 0.
+  const DECODER_DIVE = deepFreeze({
+    prefix: ["<START>", TRANSLATION.target[0]], // decoder input at generation step 2 (Scene 10's example); step 1 is its first row
+    end: "<END>",
+    // Seed variant of layer 1's encoder–decoder head 1 (its W_Q, W_K), picked among seeded candidates so the
+    // illustrative weights are legible (<START> mostly reads "The", "L'" mostly reads "animal") — not tuned by
+    // hand, not trained.
+    crossSeed: "~2814",
+    // ILLUSTRATIVE next-token logits — not produced by a model. "…" is one bucket for every other entry of the
+    // vocabulary, so the shown probabilities plus that bucket sum to 1. The engine applies softmax.
+    next: [
+      { "L'": 2.5, Le: 1.4, La: 0.9, Un: 0.3, "…": 0.6 },
+      { animal: 2.8, enfant: 0.9, homme: 0.6, oiseau: 0.2, "…": 0.7 },
+    ],
+  });
+  // X·W for a seeded W ∈ R^{rows×cols} that is never stored: the same numbers, in the same order, as
+  // paperMatrix(tag, rows, cols, amp), and the same left-to-right sums as matMulPlain(X, W) — bit for bit.
+  function seededMatMul(X, tag, rows, cols, amp) {
+    const rnd = mulberry32(fnv1a(`${PAPER_SEED}:${tag}`)), n = X.length;
+    const out = Array.from({ length: n }, () => new Float64Array(cols)), w = new Float64Array(cols);
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) w[c] = (2 * rnd() - 1) * amp;
+      for (let i = 0; i < n; i++) { const xr = X[i][r], o = out[i]; for (let c = 0; c < cols; c++) o[c] += xr * w[c]; }
+    }
+    return out.map((o) => Array.from(o));
+  }
+  // MultiHead(Q, K, V) at paper scale: every head projects the whole 512-d rows with its own W_Q, W_K, W_V
+  // (512×64), softmax(QKᵀ/√64)V (causal: j > i → −∞), Concat (8·64 = 512) · W^O (512×512).
+  function paperMultiHead(Xq, Xkv, tag, { causal = false, variant = () => "" } = {}) {
+    const { dModel, nHeads, dK, dV } = CONFIG.paper, a = paperAmp(dModel);
+    const mask = causal ? Xq.map((_, i) => Xkv.map((_, j) => j <= i)) : null;
+    const heads = [];
+    for (let h = 0; h < nHeads; h++) {
+      const v = variant(h);
+      const Q = seededMatMul(Xq, `${tag}:WQ${h}${v}`, dModel, dK, a);
+      const K = seededMatMul(Xkv, `${tag}:WK${h}${v}`, dModel, dK, a);
+      const V = seededMatMul(Xkv, `${tag}:WV${h}`, dModel, dV, a);
+      const att = scaledDotProductAttention(Q, K, V, dK, { mask });
+      // `unmasked` keeps every score ÷ √d_k, also where the mask then puts −∞ (shown before masking)
+      heads.push({ Q, K, V, raw: att.raw, unmasked: att.raw.map((r) => r.map((x) => x / Math.sqrt(dK))), scaled: att.scaled, A: att.A, Z: att.Z });
+    }
+    const Concat = Xq.map((_, i) => concat(...heads.map((hd) => hd.Z[i])));
+    return { heads, Concat, out: seededMatMul(Concat, `${tag}:WO`, nHeads * dV, dModel, paperAmp(nHeads * dV)) };
+  }
+  function paperDecoder(prefix = DECODER_DIVE.prefix, source = TRANSLATION.source) {
+    const { dModel, dFF, layers: nLayers } = CONFIG.paper, root = Math.sqrt(dModel);
+    const M = source.map((t) => layerNorm(paperUniform(`ENC:${t.toLowerCase()}`, dModel, 1)));
+    const raw = prefix.map((t) => paperUniform(`E:${t.toLowerCase()}`, dModel, 1).map((v) => v / root));
+    const emb = raw.map((r) => r.map((v) => v * root)); // × √d_model
+    const P = prefix.map((_, pos) => positionalEncoding(pos, dModel));
+    const X0 = emb.map((e, i) => vectorAdd(e, P[i]));
+    const layers = [];
+    let X = X0;
+    for (let l = 0; l < nLayers; l++) {
+      // masked multi-head self-attention, Add & Norm
+      const self = paperMultiHead(X, X, `D${l}S`, { causal: true });
+      const R1 = X.map((x, i) => vectorAdd(x, self.out[i])), N1 = R1.map(layerNorm);
+      // encoder–decoder attention: Q from the decoder, K and V from the encoder output; Add & Norm
+      const cross = paperMultiHead(N1, M, `D${l}C`, { variant: (h) => (l === 0 && h === 0 ? DECODER_DIVE.crossSeed : "") });
+      const R2 = N1.map((x, i) => vectorAdd(x, cross.out[i])), N2 = R2.map(layerNorm);
+      // position-wise FFN 512 → 2048 → ReLU → 512, Add & Norm
+      const b1 = paperUniform(`D${l}F:b1`, dFF, 0.1), b2 = paperUniform(`D${l}F:b2`, dModel, 0.1);
+      const Hpre = seededMatMul(N2, `D${l}F:W1`, dModel, dFF, paperAmp(dModel)).map((h) => vectorAdd(h, b1));
+      const H = Hpre.map(relu);
+      const F = seededMatMul(H, `D${l}F:W2`, dFF, dModel, paperAmp(dFF)).map((f) => vectorAdd(f, b2));
+      const R3 = N2.map((x, i) => vectorAdd(x, F[i])), N3 = R3.map(layerNorm);
+      layers.push({ X, self, R1, N1, cross, R2, N2, Hpre, H, F, R3, N3 });
+      X = N3;
+    }
+    // ILLUSTRATIVE next-token distributions for the two shown steps (declared logits, real softmax). Step k has
+    // prefix length t = k + 1; the vocabulary projection reads only the newest position, row t − 1 of the output.
+    const next = DECODER_DIVE.next.map((o, k) => {
+      const vocab = Object.keys(o), logits = vocab.map((w) => o[w]);
+      return { t: k + 1, row: k, h: X[k], vocab, logits, ...softmaxTrace(logits) };
+    });
+    return { source, prefix, M, raw, emb, P, X0, layers, out: X, next, generated: [...TRANSLATION.target, DECODER_DIVE.end] };
+  }
+
   // ---------------------------------------------------------------------------- DISPLAY HELPERS
   // One rounding rule everywhere (half away from zero) so displayed digits and checks agree.
   function roundUnits(x, p) { return Math.sign(x) * Math.round(Math.abs(x) * 10 ** p); }
@@ -647,6 +739,7 @@ body.exploring .ex-hit:hover { fill: rgba(207, 217, 235, 0.05); }
     scaledDotProductAttention, computeModel, maskedDecoderGrid, nextTokenDistribution,
     tokenize, embeddingFor, roundUnits, fmt, relationSign, productSign,
     PAPER_SEED, paperScale, paperHeadWeights, paperWO, matMulPlain,
+    DECODER_DIVE, paperDecoder, paperMultiHead, seededMatMul, paperMatrix, paperUniform,
   });
 })(globalThis);
 </script>
@@ -680,7 +773,15 @@ body.exploring .ex-hit:hover { fill: rgba(207, 217, 235, 0.05); }
   // Epilogue: the same operations at the paper's sizes, with seeded ILLUSTRATIVE values (engine: paperScale)
   const PD = E.CONFIG.paper;
   const PAPER = E.paperScale(TOKENS);
-  const SRC = { ...MODEL, params: E.PARAMS, dec: DEC, paper: PAPER, derived: { alphaSum: MODEL.heads[0].A[FOCUS].reduce((a, b) => a + b, 0) } };
+  // Inside the decoder (optional branch): the same decoder at paper scale on the Scene 10 example (engine: paperDecoder)
+  const DD = E.paperDecoder();
+  const S_LEN = DD.source.length; // s, from the existing translation example — never hard-coded
+  const SRC = { ...MODEL, params: E.PARAMS, dec: DEC, paper: PAPER, dd: DD, derived: {
+    alphaSum: MODEL.heads[0].A[FOCUS].reduce((a, b) => a + b, 0),
+    ddZeros: DD.layers[0].H[0].filter((v) => v === 0).length,
+    ddCrossSum: DD.layers[0].cross.heads[0].A[0].reduce((a, b) => a + b, 0),
+    sqrt512: Math.sqrt(E.CONFIG.paper.dModel),
+  } };
   const val = (path) => path.split(".").reduce((o, k) => (o == null ? undefined : o[k]), SRC);
 
   // ---------------------------------------------------------------------------- UI STATE
@@ -810,20 +911,22 @@ body.exploring .ex-hit:hover { fill: rgba(207, 217, 235, 0.05); }
   }
 
   // A Run is one beat's forward choreography. Skipping makes the rest instant; a newer run makes it dead.
+  // `pace` scales the durations and delays of everything the run animates (1 = as written).
   class Run {
-    constructor(gen) { this.gen = gen; this.skip = false; this.owned = []; }
+    constructor(gen) { this.gen = gen; this.skip = false; this.owned = []; this.pace = 1; }
     get dead() { return this.gen !== director.gen; }
+    paced(o, dur) { return this.pace === 1 ? o : { ...o, dur: (o.dur ?? dur) * this.pace, delay: (o.delay ?? 0) * this.pace }; }
     set(obj, props) { if (this.dead) return; Object.assign(obj, props); obj.apply(); }
     tween(obj, to, opts = {}) {
       if (this.dead) return Promise.resolve();
       if (this.skip) { Object.assign(obj, to); obj.apply(); return Promise.resolve(); }
-      return tween(obj, to, opts);
+      return tween(obj, to, this.paced(opts, 600));
     }
-    wait(ms) { return this.dead || this.skip ? Promise.resolve() : wait(ms); }
+    wait(ms) { return this.dead || this.skip ? Promise.resolve() : wait(ms * this.pace); }
     morph(id, target, opts = {}) {
       const obj = typeof id === "string" ? REG.get(id) : id;
       if (this.dead) return Promise.resolve();
-      return obj.morph(target, { ...opts, run: this });
+      return obj.morph(target, { ...this.paced(opts, 700), run: this });
     }
     // Transients belong to their run; one created after the run was superseded is removed at once.
     own(obj) { if (this.dead) obj.el.remove(); else this.owned.push(obj); return obj; }
@@ -842,7 +945,8 @@ body.exploring .ex-hit:hover { fill: rgba(207, 217, 235, 0.05); }
     }
     set(props) { Object.assign(this, props); this.apply(); return this; }
     // neutral values for properties that only some layouts set; applied whenever a layout shows the object
-    layoutDefaults() { return {}; }
+    // (scale included: a camera-style move may have scaled anything)
+    layoutDefaults() { return { s: 1 }; }
     apply() {
       const o = Math.max(0, Math.min(1, this.o));
       this.el.setAttribute("transform", `translate(${r2(this.x)} ${r2(this.y)})` + (this.r ? ` rotate(${r2(this.r)})` : "") + (this.s !== 1 ? ` scale(${this.s.toFixed(4)})` : ""));
@@ -1299,6 +1403,7 @@ body.exploring .ex-hit:hover { fill: rgba(207, 217, 235, 0.05); }
   const TONE = {
     n: { rgb: [207, 217, 235], v: "v-neutral", m: "m-neutral", hl: "hl-n" }, x: { rgb: [214, 220, 246], v: "v-x", m: "m-neutral", hl: "hl-n" },
     q: { rgb: [76, 201, 245], v: "v-q", m: "m-q", hl: "hl-q" }, k: { rgb: [246, 169, 64], v: "v-k", m: "m-k", hl: "hl-k" }, v: { rgb: [85, 216, 160], v: "v-v", m: "m-v", hl: "hl-v" },
+    pe: { rgb: [171, 141, 251], v: "v-pe", m: "m-neutral", hl: "hl-pe" },
   };
   const HEAT = new Map();
   // colour scale ≈ 2.2 × RMS, so a strip shows the spread of its values rather than one outlier
@@ -1330,11 +1435,11 @@ body.exploring .ex-hit:hover { fill: rgba(207, 217, 235, 0.05); }
   //  c  = 1 folds it into a compact heat block (the strip swallows the numbers)
   //  so = 1 shows only the `solo` row, brackets around that row alone
   class CMatObj extends Node2D {
-    layoutDefaults() { return { s: 1, c: 0, so: 0, nu: 1, ix: 0, hla: 0, draw: 1, glow: 0 }; }
-    constructor(id, layer, { M, rowSrc, lead, tone = "x", size = 28, rowH = 54, mid = 820, cw = 384, crowH = 16, solo = 0, hlRow = -1, vmax = null }) {
+    layoutDefaults() { return { s: 1, c: 0, so: 0, nu: 1, ix: 0, hla: 0, draw: 1, glow: 0, mid: this.mid0 }; }
+    constructor(id, layer, { M, rowSrc, lead, tone = "x", size = 28, rowH = 54, mid = 820, cw = 384, crowH = 16, solo = 0, hlRow = -1, vmax = null, d = 2, wd = null }) {
       super(id, layer, `cmat vec ${TONE[tone].v}`);
       const rows = M.length, dim = M[0].length;
-      Object.assign(this, { rows, dim, lead, size, rowH, mid, cw, crowH, solo, hlRow, c: 0, so: 0, nu: 1, ix: 0, hla: 0, draw: 1, glow: 0 });
+      Object.assign(this, { rows, dim, lead, size, rowH, mid, mid0: mid, cw, crowH, solo, hlRow, dp: d, wd: wd ?? d, c: 0, so: 0, nu: 1, ix: 0, hla: 0, draw: 1, glow: 0 });
       const cid = `clip-cm${++clipSeq}`;
       this.clipR = svg("rect", {}, svg("clipPath", { id: cid }, this.el));
       this.hlR = svg("rect", { class: `cell-hl ${TONE[tone].hl}`, rx: 8 }, this.el);
@@ -1348,7 +1453,7 @@ body.exploring .ex-hit:hover { fill: rgba(207, 217, 235, 0.05); }
         el.full = svg("image", { href: fUrl, preserveAspectRatio: "none", class: "heat" }, strips);
         el.nums = Array.from({ length: lead + 1 }, (_, k) => {
           const t = svg("text", { class: "num", "text-anchor": "middle", "dominant-baseline": "central", "font-size": size }, this.el);
-          bindNum(t, `${src}.${k < lead ? k : dim - 1}`, 2);
+          bindNum(t, `${src}.${k < lead ? k : dim - 1}`, d);
           return t;
         });
         return el;
@@ -1360,17 +1465,19 @@ body.exploring .ex-hit:hover { fill: rgba(207, 217, 235, 0.05); }
         t.textContent = k < lead ? String(k + 1) : k === lead ? "⋯" : String(dim);
         return t;
       });
-      this.nw = numW(size, 2);
+      this.nw = numW(size, this.wd);
       this.apply();
     }
-    relayout() { this.nw = numW(this.size, 2); this.apply(); }
+    relayout() { this.nw = numW(this.size, this.wd); this.apply(); }
     // notation-mode width (c = 0): layouts use it to place labels just outside the brackets
-    notation() {
+    notation(mid = this.mid) {
       const { lead, size, nw } = this, g = 0.5 * size, sg = 0.42 * size;
-      const Wn = lead * nw + Math.max(0, lead - 1) * g + 2 * sg + this.mid + nw;
+      const Wn = lead * nw + Math.max(0, lead - 1) * g + 2 * sg + mid + nw;
       return { g, sg, Wn, hw: Wn / 2 + 0.36 * size };
     }
-    halfW() { return this.notation().hw; }
+    halfW(mid = this.mid) { return this.notation(mid).hw; }
+    // the strip width that gives this vector a half-width of hw (to line up with another compressed vector)
+    midFor(hw) { return this.mid + 2 * (hw - this.halfW()); }
     rowOff(r) { return (r - (this.rows - 1) / 2) * this.rowH; }
     geo() {
       const { lead, dim, size, nw, c } = this, { g, sg, Wn, hw } = this.notation();
@@ -1421,7 +1528,7 @@ body.exploring .ex-hit:hover { fill: rgba(207, 217, 235, 0.05); }
     rowAbs(r) { return { x: this.x, y: this.y + this.geo().rowY(r) * this.s }; }
     morphExtra(t, { dur, delay, appearing, ps }) {
       const goal = {};
-      for (const k of ["c", "so", "nu", "ix", "hla", "draw", "glow"]) if (t[k] !== undefined && t[k] !== this[k]) goal[k] = t[k];
+      for (const k of ["c", "so", "nu", "ix", "hla", "draw", "glow", "mid"]) if (t[k] !== undefined && t[k] !== this[k]) goal[k] = t[k];
       if (!Object.keys(goal).length) return;
       if (appearing || !dur) { Object.assign(this, goal); this.apply(); } else ps.push(tween(this, goal, { dur, delay }));
     }
@@ -1642,6 +1749,18 @@ body.exploring .ex-hit:hover { fill: rgba(207, 217, 235, 0.05); }
     pqkv: `One head projects ${PD.dModel} dimensions down to ${PD.dK}.`,
     pheads: `${PD.nHeads} heads in parallel, concatenated back to ${PD.nHeads * PD.dV}.`,
     puses: "The same attention mechanism appears throughout the architecture.",
+    dstart: "At the first generation step, the decoder only has <START>.",
+    dheads: "Every head projects the whole 512-d vector into its own 64-d Q, K and V.",
+    dt1: "There is only one available decoder position, so it receives all the self-attention.",
+    dconcat: "Masked self-attention transformed the decoder prefix. It has not generated a word yet.",
+    dcross: "Q from decoder · K,V from encoder",
+    dscores: "One score per source token — then softmax over the source.",
+    dvalues: "Cross-attention lets the current decoder representation gather information from the encoded source sentence.",
+    dlayers: "Each decoder layer has its own learned parameters.",
+    dtoken: "These 512 numbers are not themselves a word.",
+    dmask: "Now the causal mask matters.",
+    dnext: "Generation uses the representation at the newest decoder position.",
+    dffn: "This completes one decoder layer.",
     explore: "Click any word to make it the query.",
     nopos: "Without positional information, the mechanism no longer receives explicit token-order information.",
   };
@@ -1931,6 +2050,213 @@ body.exploring .ex-hit:hover { fill: rgba(207, 217, 235, 0.05); }
     const fin = new TextObj("p:final", LAYER.hud, { size: 32, textCls: "caption" });
     svg("tspan", { x: 0 }, fin.t).textContent = "The math did not change.";
     svg("tspan", { x: 0, dy: "1.3em" }, fin.t).textContent = "Only the dimensionality and number of heads increased.";
+    // Inside the decoder (optional branch): one decoder layer opened up at paper scale, on the Scene 10 example.
+    // Every number is bound to the engine's paperDecoder arrays (illustrative values, paper shapes).
+    const L0 = DD.layers[0], SH = L0.self.heads, CH = L0.cross.heads;
+    const T = (id, o) => new TextObj(id, LAYER.main, o);
+    ["DECODER INPUT  ·  GENERATION STEP 1  ·  t = 1", "DECODER LAYER 1  ·  MASKED MULTI-HEAD SELF-ATTENTION", "DECODER LAYER 1  ·  ENCODER–DECODER ATTENTION",
+      "DECODER LAYER 1  ·  FEED-FORWARD", `DECODER LAYERS 1 – ${PD.layers}`, `AFTER DECODER LAYER ${PD.layers}  ·  LINEAR + SOFTMAX`, "GENERATION STEP 2  ·  t = 2",
+    ].forEach((text, k) => T(`dd:cr${k}`, { text, size: 15, textCls: "lane-tag" }));
+    const ddX = heatScale(DD.X0, DD.layers.map((Ly) => Ly.N1).flat()), ddQ = heatScale(...SH.map((h) => h.Q)), ddK = heatScale(...SH.map((h) => h.K));
+    const ddV = heatScale(...SH.map((h) => h.V)), ddZ = heatScale(L0.self.Concat), ddCZ = heatScale(L0.cross.Concat);
+    const cm = (id, M, rowSrc, o) => new CMatObj(id, LAYER.main, { M, rowSrc, ...o });
+    // 1 · the decoder's first input: <START> → embedding → × √512 → + PE → x_START
+    const v1 = { lead: 3, size: 26, mid: 640, wd: 3 };
+    cm("dd:raw", [DD.raw[0]], () => "dd.raw.0", { ...v1, tone: "n", d: 3 });
+    cm("dd:emb", [DD.emb[0]], () => "dd.emb.0", { ...v1, tone: "n" });
+    cm("dd:pe", [DD.P[0]], () => "dd.P.0", { ...v1, tone: "pe" });
+    cm("dd:x", [DD.X0[0]], () => "dd.X0.0", { ...v1, tone: "x", vmax: ddX });
+    T("dd:rawlab", { rich: "embedding(<START>)", size: 26, anchor: "end", textCls: "serif" });
+    T("dd:emblab", { rich: `× √${PD.dModel}`, size: 26, anchor: "end", textCls: "serif" });
+    T("dd:pelab", { rich: "+ PE(\\i{pos} = 0)", size: 26, anchor: "end", textCls: "serif f-pe" });
+    T("dd:xlab", { rich: "\\i{x}_{START} =", size: 30, anchor: "end", textCls: "serif" });
+    T("dd:xshape", { text: "1 × 512", size: 22, anchor: "start", textCls: "dims-text" });
+    new LabelNumObj("dd:sq", LAYER.main, { rich: `√\\i{d}_{model} = √${PD.dModel} = `, size: 22, cls: "serif muted", src: "derived.sqrt512", d: 2, anchor: "start" });
+    new PathObj("dd:rule", LAYER.main, { geo: polyGeo([[0, 0], [1, 0]]), cls: "rule" });
+    new PathObj("dd:wtok", LAYER.back, { geo: polyGeo([[0, 0], [1, 0]]), cls: "wire s-n", arrow: "arr" });
+    T("dd:note1", { rich: `illustrative values  ·  paper-accurate size: \\i{d}_{model} = ${PD.dModel}`, size: 20, textCls: "note-text" });
+    // 2 · masked self-attention: all eight heads take the whole 512-d vector (head 1 in full)
+    T("dd:h1tag", { text: "HEAD 1", size: 16, anchor: "start", textCls: "lane-tag" });
+    T("dd:mx0lab", { rich: `the whole \\i{x}_{START}:  1 × ${PD.dModel}`, size: 18, textCls: "dims-text" });
+    BRANCHES.forEach((b) => {
+      const B = BR[b], big = B.label;
+      cm(`dd:${b}1`, [SH[0][B.M][0]], () => `dd.layers.0.self.heads.0.${B.M}.0`, { lead: 2, size: 26, mid: 120, tone: b, cw: pW(b), vmax: { q: ddQ, k: ddK, v: ddV }[b] });
+      new PathObj(`dd:hw:${b}`, LAYER.back, { geo: [0, 0, 1, 0, 2, 0, 3, 0], cls: `wire s-${b}`, arrow: `arr-${b}` });
+      T(`dd:${b}1lab`, { rich: `\\i{${big}}_{1} = \\i{x} \\i{W}_{${big}}`, size: 28, anchor: "end", textCls: `serif f-${b}` });
+      T(`dd:${b}1dim`, { text: "(1×512)(512×64) → 1×64", size: 20, anchor: "start", textCls: "dims-text" });
+    });
+    for (let h = 0; h < PD.nHeads; h++) {
+      new BlockObj(`dd:mx${h}`, LAYER.main, { url: heatURL("dd.X0.0|all", [DD.X0[0]], "x", ddX), tone: "x", rows: 1 });
+      if (h === 0) continue;
+      T(`dd:ht${h}`, { text: `HEAD ${h + 1}`, size: 14, anchor: "start", textCls: "lane-tag" });
+      for (const [b, M, sc] of [["q", SH[h].Q, ddQ], ["k", SH[h].K, ddK], ["v", SH[h].V, ddV]])
+        new BlockObj(`dd:h${b}${h}`, LAYER.main, { url: heatURL(`dd.self.${h}.${b}`, [M[0]], b, sc), tone: b, rows: 1 });
+      T(`dd:hd${h}`, { text: `${PD.dModel} → ${PD.dK}`, size: 18, anchor: "start", textCls: "dims-text" });
+      new LabelNumObj(`dd:hs${h}`, LAYER.main, { rich: "\\i{α} = ", size: 18, cls: "serif muted", src: `dd.layers.0.self.heads.${h}.A.0.0`, d: 2, anchor: "end" });
+      new BlockObj(`dd:hz${h}`, LAYER.main, { url: heatURL(`dd.self.${h}.Z`, [SH[h].Z[0]], "v", ddZ), tone: "v", rows: 1 });
+    }
+    T("dd:note2", { rich: "illustrative values · every head has its own \\i{W}_{Q}, \\i{W}_{K}, \\i{W}_{V} ∈ ℝ^{512×64}", size: 20, textCls: "note-text" });
+    // 3 · t = 1: a 1×1 score, ÷ √64, softmax = [1]; the head output is its value vector
+    for (const [k, src] of [["s", "raw"], ["ss", "unmasked"], ["sa", "A"]])
+      new VectorObj(`dd:${k}1`, LAYER.main, { n: 1, size: 30, gap: 90, orient: "row", src: `dd.layers.0.self.heads.0.${src}.0`, d: 2, cls: k === "sa" ? "v-neutral" : "v-q" });
+    T("dd:s1lab", { rich: "\\i{q}_{1}\\i{k}_{1}^{T} =", size: 28, anchor: "end", textCls: "serif" });
+    T("dd:s1dim", { text: "(1×64)(64×1) → 1×1", size: 20, textCls: "dims-text" });
+    T("dd:ss1lab", { rich: `÷ √${PD.dK} = ${Math.sqrt(PD.dK)}`, size: 24, textCls: "serif" });
+    T("dd:sa1lab", { rich: "softmax", size: 24, textCls: "serif" });
+    for (const k of ["ar1", "ar2"]) new PathObj(`dd:${k}`, LAYER.back, { geo: polyGeo([[0, 0], [1, 0]]), cls: "wire s-n", arrow: "arr" });
+    cm("dd:z1", [SH[0].Z[0]], () => "dd.layers.0.self.heads.0.Z.0", { lead: 2, size: 26, mid: 120, tone: "v", cw: pW("v"), vmax: ddZ });
+    T("dd:z1lab", { rich: "head_{1} = \\i{α} \\i{v}_{1} =", size: 28, anchor: "end", textCls: "serif f-v" });
+    T("dd:z1dim", { text: "1 × 64", size: 22, anchor: "start", textCls: "dims-text" });
+    T("dd:note3", { rich: "\\i{t} = 1  ·  no future position yet, so the mask has nothing to block", size: 20, textCls: "note-text" });
+    // 4 · the eight head outputs concatenate to 512, then W^O, residual, LayerNorm
+    new BlockObj("dd:cat", LAYER.main, { url: heatURL("dd.self.Concat0", [L0.self.Concat[0]], "v", ddZ), tone: "v", rows: 1, segments: PD.nHeads });
+    T("dd:catlab", { rich: `Concat(head_{1}, …, head_{${PD.nHeads}}) ∈ ℝ^{1×${PD.nHeads * PD.dV}}`, size: 26, textCls: "serif f-v" });
+    for (const k of ["mw1", "mw2"]) new PathObj(`dd:${k}`, LAYER.back, { geo: polyGeo([[0, 0], [0, 1]]), cls: "wire s-n", arrow: "arr" });
+    T("dd:catdim", { text: `${PD.nHeads} × ${PD.dV} = ${PD.nHeads * PD.dV}`, size: 20, anchor: "start", textCls: "dims-text" });
+    T("dd:wodim", { text: `(1×${PD.nHeads * PD.dV})(${PD.nHeads * PD.dV}×${PD.dModel}) → 1×${PD.dModel}`, size: 20, anchor: "start", textCls: "dims-text" });
+    const WOd = E.paperMatrix("D0S:WO", PD.nHeads * PD.dV, PD.dModel, Math.sqrt(3 / (PD.nHeads * PD.dV)));
+    new BlockObj("dd:wo", LAYER.main, { url: heatURL("D0S:WO", WOd, "n", heatScale(WOd)), tone: "n", rows: WOd.length });
+    T("dd:wolab", { rich: `× \\i{W}^{O} ∈ ℝ^{${PD.nHeads * PD.dV}×${PD.dModel}}`, size: 24, anchor: "start", textCls: "serif" });
+    cm("dd:mh", [L0.self.out[0]], () => "dd.layers.0.self.out.0", { ...v1, tone: "n" });
+    T("dd:mhlab", { rich: "MultiHead", size: 26, anchor: "end", textCls: "serif" });
+    T("dd:reslab", { rich: "+ \\i{x}_{START}", size: 26, anchor: "end", textCls: "serif" });
+    T("dd:resnote", { text: "residual", size: 18, anchor: "start", textCls: "dims-text" });
+    cm("dd:y", [L0.N1[0]], () => "dd.layers.0.N1.0", { ...v1, tone: "x", vmax: ddX });
+    T("dd:ylab", { rich: "\\i{y} = LayerNorm(\\i{x} + MultiHead) =", size: 26, anchor: "end", textCls: "serif" });
+    T("dd:yshape", { text: "1 × 512", size: 22, anchor: "start", textCls: "dims-text" });
+    new PathObj("dd:rule2", LAYER.main, { geo: polyGeo([[0, 0], [1, 0]]), cls: "rule" });
+    // 5–7 · encoder–decoder attention: Q from the decoder, K and V from the encoder output
+    const tab = { size: 22, rowH: 64 };
+    cm("dd:E", DD.M, (r) => `dd.M.${r}`, { ...tab, lead: 2, mid: 150, tone: "n" });
+    cm("dd:K", CH[0].K, (r) => `dd.layers.0.cross.heads.0.K.${r}`, { ...tab, lead: 1, mid: 44, tone: "k", cw: pW("k") });
+    cm("dd:V", CH[0].V, (r) => `dd.layers.0.cross.heads.0.V.${r}`, { ...tab, lead: 1, mid: 44, tone: "v", cw: pW("v") });
+    T("dd:Etag", { text: "ENCODER OUTPUT", size: 15, textCls: "lane-tag" });
+    T("dd:Elab", { rich: `\\i{E} ∈ ℝ^{s×512}  ·  \\i{s} = ${S_LEN}`, size: 24, textCls: "serif" });
+    T("dd:Klab", { rich: "\\i{K} = \\i{E} \\i{W}_{K}", size: 24, textCls: "serif f-k" });
+    T("dd:Kdim", { rich: "(\\i{s}×512)(512×64) → \\i{s}×64", size: 18, textCls: "dims-text" });
+    T("dd:Vlab", { rich: "\\i{V} = \\i{E} \\i{W}_{V}", size: 24, textCls: "serif f-v" });
+    T("dd:Vdim", { rich: "(\\i{s}×512)(512×64) → \\i{s}×64", size: 18, textCls: "dims-text" });
+    T("dd:Dtag", { text: "DECODER STATE", size: 15, textCls: "lane-tag" });
+    cm("dd:yq", [L0.N1[0]], () => "dd.layers.0.N1.0", { lead: 1, size: 24, mid: 110, tone: "x", vmax: ddX });
+    T("dd:yqlab", { rich: "\\i{y} =", size: 26, anchor: "end", textCls: "serif" });
+    cm("dd:cq", [CH[0].Q[0]], () => "dd.layers.0.cross.heads.0.Q.0", { lead: 2, size: 24, mid: 70, tone: "q", cw: pW("q") });
+    T("dd:cqlab", { rich: "\\i{q} = \\i{y} \\i{W}_{Q}", size: 24, anchor: "start", textCls: "serif f-q" });
+    T("dd:cqdim", { text: "(1×512)(512×64) → 1×64", size: 18, textCls: "dims-text" });
+    new PathObj("dd:wq", LAYER.back, { geo: polyGeo([[0, 0], [0, 1]]), cls: "wire s-q", glowCls: "wire-glow s-q", arrow: "arr-q" });
+    for (let j = 0; j < S_LEN; j++) {
+      new NumObj(`dd:sc${j}`, LAYER.main, { size: 24 });
+      new BarObj(`dd:bar${j}`, LAYER.main);
+      new WireObj(`dd:st${j}`, LAYER.back, { geo: [0, 0, 1, 0, 2, 0, 3, 0], cls: "wire s-v", glowCls: "wire-glow s-v" });
+    }
+    new TextObj("dd:schd", LAYER.main, { parts: [["\\i{q}", "f-q"], ["\\i{K}", "f-k"], ["^{T}", null]], size: 22, textCls: "serif" });
+    new TextObj("dd:schd2", LAYER.main, { parts: [["\\i{q}", "f-q"], ["\\i{K}", "f-k"], [`^{T} / √${PD.dK} = `, null], ["\\i{q}", "f-q"], ["\\i{K}", "f-k"], [`^{T} / ${Math.sqrt(PD.dK)}`, null]], size: 22, textCls: "serif" });
+    T("dd:scdim", { rich: "(1×64)(64×\\i{s}) → 1×\\i{s}", size: 18, textCls: "dims-text" });
+    T("dd:ahd", { parts: [["\\i{α} = softmax(", null], ["\\i{q}", "f-q"], ["\\i{K}", "f-k"], ["^{T} / √64)", null]], size: 22, textCls: "serif" });
+    new LabelNumObj("dd:asum", LAYER.main, { rich: "Σ \\i{α}_{j} = ", size: 22, src: "derived.ddCrossSum", d: 2 });
+    T("dd:scnote", { text: "illustrative cross-attention weights", size: 20, textCls: "note-text" });
+    cm("dd:cz", [CH[0].Z[0]], () => "dd.layers.0.cross.heads.0.Z.0", { lead: 2, size: 24, mid: 70, tone: "v", cw: pW("v"), vmax: ddCZ });
+    for (let h = 1; h < PD.nHeads; h++) new BlockObj(`dd:cz${h}`, LAYER.main, { url: heatURL(`dd.cross.${h}.Z`, [CH[h].Z[0]], "v", ddCZ), tone: "v", rows: 1 });
+    for (const k of ["cw1", "cw2"]) new PathObj(`dd:${k}`, LAYER.back, { geo: polyGeo([[0, 0], [0, 1]]), cls: "wire s-n", arrow: "arr" });
+    T("dd:czlab", { rich: "head_{1} = Σ_{j} \\i{α}_{j}\\i{v}_{j}", size: 24, textCls: "serif f-v" });
+    T("dd:czdim", { text: "1 × 64", size: 20, anchor: "start", textCls: "dims-text" });
+    new BlockObj("dd:ccat", LAYER.main, { url: heatURL("dd.cross.Concat0", [L0.cross.Concat[0]], "v", ddCZ), tone: "v", rows: 1, segments: PD.nHeads });
+    T("dd:ccatlab", { rich: `${PD.nHeads} heads → Concat ∈ ℝ^{1×512} → \\i{W}^{O}`, size: 22, textCls: "serif f-v" });
+    T("dd:cnorm", { rich: "+ \\i{y},  LayerNorm", size: 22, anchor: "end", textCls: "serif muted" });
+    cm("dd:z", [L0.N2[0]], () => "dd.layers.0.N2.0", { lead: 2, size: 24, mid: 110, tone: "x", vmax: ddX });
+    T("dd:zlab", { rich: "\\i{z} =", size: 26, anchor: "end", textCls: "serif" });
+    T("dd:zshape", { text: "1 × 512", size: 20, textCls: "dims-text" });
+    // 8 · the position-wise FFN, then six layers (each its own weights)
+    T("dd:w1lab", { rich: `× \\i{W}_{1} + \\i{b}_{1}   (${PD.dModel} × ${PD.dFF}),   then ReLU`, size: 22, anchor: "start", textCls: "serif muted" });
+    // the hidden layer before and after ReLU; after it, brightness runs from 0 (darkest) up, so the exact zeros show
+    const hS = heatScale([L0.Hpre[0]]);
+    new BlockObj("dd:hpre", LAYER.main, { url: heatURL("dd.Hpre0", [L0.Hpre[0]], "n", hS), tone: "n", rows: 1 });
+    new BlockObj("dd:hid", LAYER.main, { url: heatURL("dd.H0", [L0.H[0].map((v) => 2 * v - hS)], "n", hS), tone: "n", rows: 1 });
+    for (const k of ["fw1", "fw2", "fw3"]) new PathObj(`dd:${k}`, LAYER.back, { geo: polyGeo([[0, 0], [0, 1]]), cls: "wire s-n", arrow: "arr" });
+    T("dd:hidlab", { rich: `ReLU(\\i{z}\\i{W}_{1} + \\i{b}_{1}) ∈ ℝ^{1×${PD.dFF}}`, size: 24, anchor: "end", textCls: "serif" });
+    new LabelNumObj("dd:zeros", LAYER.main, { rich: `exactly 0 after ReLU (of ${PD.dFF}): `, size: 20, cls: "serif muted", src: "derived.ddZeros", d: 0, anchor: "start" });
+    T("dd:w2lab", { rich: `× \\i{W}_{2} + \\i{b}_{2}   (${PD.dFF} × ${PD.dModel})`, size: 22, anchor: "start", textCls: "serif muted" });
+    cm("dd:ffo", [L0.F[0]], () => "dd.layers.0.F.0", { lead: 3, size: 24, mid: 420, tone: "n" });
+    T("dd:ffolab", { rich: "FFN(\\i{z}) =", size: 26, anchor: "end", textCls: "serif" });
+    T("dd:ffoshape", { text: "1 × 512", size: 20, anchor: "start", textCls: "dims-text" });
+    T("dd:ffnorm", { rich: "+ \\i{z},   LayerNorm", size: 22, anchor: "start", textCls: "serif muted" });
+    cm("dd:l1", [L0.N3[0]], () => "dd.layers.0.N3.0", { lead: 3, size: 24, mid: 420, tone: "x", vmax: ddX });
+    T("dd:l1lab", { rich: "LayerNorm(\\i{z} + FFN(\\i{z}))  —  the output of decoder layer 1", size: 24, textCls: "serif" });
+    T("dd:l1shape", { text: "1 × 512", size: 20, anchor: "start", textCls: "dims-text" });
+    for (let k = 1; k <= PD.layers; k++) {
+      new BoxObj(`dd:L${k}`, LAYER.under, { label: `Decoder layer ${k}`, size: 20, cls: k === 1 ? "blk blk-attn" : "blk ghost" }); // layers 2–6: ghosted copies
+      new PathObj(`dd:tap${k}`, LAYER.back, { geo: polyGeo([[0, 0], [1, 0]]), cls: "wire s-k", arrow: "arr-k" });
+    }
+    new PathObj("dd:bus", LAYER.back, { geo: polyGeo([[0, 0], [0, 1]]), cls: "wire s-k", glowCls: "wire-glow s-k" });
+    new PathObj("dd:up", LAYER.back, { geo: polyGeo([[0, 0], [0, 1]]), cls: "wire s-n", arrow: "arr" });
+    T("dd:buslab", { rich: "encoder output → \\i{K}, \\i{V} of every layer", size: 20, anchor: "end", textCls: "serif f-k" });
+    T("dd:n6", { rich: `Paper: \\i{N} = ${PD.layers}`, size: 28, anchor: "start", textCls: "serif" });
+    T("dd:sublab", { text: "each: masked self-attention · cross-attention · FFN", size: 20, anchor: "start", textCls: "dims-text" });
+    for (let k = 0; k < PD.layers; k++) new PathObj(`dd:lup${k}`, LAYER.back, { geo: polyGeo([[0, 0], [0, 1]]), cls: "wire s-n", arrow: "arr" });
+    T("dd:lin0lab", { rich: "\\i{x}_{START}", size: 22, textCls: "serif muted" });
+    // 9 · 512 numbers become a token (illustrative next-token probabilities)
+    cm("dd:hl", [DD.next[0].h], () => `dd.out.${DD.next[0].row}`, { lead: 3, size: 26, mid: 520, tone: "x", vmax: ddX }); // the newest (only) row at t = 1
+    T("dd:hllab", { rich: "\\i{h}_{last} =", size: 30, anchor: "end", textCls: "serif" });
+    T("dd:hlshape", { text: "1 × 512", size: 22, anchor: "start", textCls: "dims-text" });
+    T("dd:hlnote", { text: "output of decoder layer 6, newest position", size: 18, textCls: "dims-text" });
+    for (const k of ["tw1", "tw2", "tw3"]) new PathObj(`dd:${k}`, LAYER.back, { geo: polyGeo([[0, 0], [0, 1]]), cls: "wire s-n", arrow: "arr" });
+    T("dd:lindim", { rich: "× \\i{W}_{vocab} ∈ ℝ^{512×|Vocab|}  →  logits ∈ ℝ^{1×|Vocab|}", size: 22, anchor: "start", textCls: "serif muted" });
+    T("dd:smdim", { rich: "over all |Vocab| entries — not an attention head", size: 22, anchor: "start", textCls: "serif muted" });
+    for (const [pre, step] of [["p", 0], ["r", 1]]) {
+      DD.next[step].vocab.forEach((w, k) => {
+        if (w === "…") T(`dd:${pre}w${k}`, { text: "… thousands more", size: 22, anchor: "end", textCls: "muted" });
+        else new TokenObj(`dd:${pre}w${k}`, LAYER.main, w, 48);
+        new BarObj(`dd:${pre}b${k}`, LAYER.main);
+        new NumObj(`dd:${pre}v${k}`, LAYER.main, { size: 22 });
+      });
+    }
+    T("dd:pnote", { text: "illustrative next-token probabilities", size: 20, textCls: "note-text" });
+    T("dd:outtag", { text: "OUTPUT SO FAR", size: 14, anchor: "start", textCls: "lane-tag" });
+    T("dd:intag", { text: "DECODER INPUT", size: 14, anchor: "start", textCls: "lane-tag" });
+    [...E.TRANSLATION.target.slice(3), E.DECODER_DIVE.end].forEach((w, i) => new TokenObj(`dd:o${i + 3}`, LAYER.main, w, 48));
+    new TokenObj("dd:i5", LAYER.main, E.TRANSLATION.target[4], 48);
+    new PathObj("dd:loop", LAYER.back, { geo: polyGeo([[0, 0], [1, 0], [1, 1], [0, 1]]), cls: "wire s-n", glowCls: "wire-glow attn-glow", arrow: "arr" });
+    T("dd:looplab", { text: "predict → append → feed back → predict again", size: 20, textCls: "caption" });
+    // 10 · t = 2: the causal mask now blocks a real future position
+    cm("dd:X2", DD.X0, (r) => `dd.X0.${r}`, { lead: 2, size: 24, rowH: 64, mid: 200, tone: "x", vmax: ddX });
+    T("dd:X2lab", { rich: "\\i{X} ∈ ℝ^{2×512}", size: 26, textCls: "serif" });
+    new PathObj("dd:t2w", LAYER.back, { geo: polyGeo([[0, 0], [1, 0]]), cls: "wire s-n", arrow: "arr" });
+    for (const b of BRANCHES) new BlockObj(`dd:t2${b}`, LAYER.main, { url: heatURL(`dd.t2.${b}`, SH[0][BR[b].M], b, b === "q" ? ddQ : b === "k" ? ddK : ddV), tone: b, rows: 2 });
+    T("dd:t2lab", { rich: "\\i{Q}, \\i{K}, \\i{V} ∈ ℝ^{2×64}  (head 1)", size: 22, textCls: "serif muted" });
+    for (let r = 0; r < 2; r++) {
+      T(`dd:grl${r}`, { text: DD.prefix[r], size: 20, anchor: "end", textCls: "token-text" });
+      T(`dd:gcl${r}`, { text: DD.prefix[r], size: 20, textCls: "token-text" });
+      for (let c = 0; c < 2; c++) { new BoxObj(`dd:gc${r}${c}`, LAYER.under, { cls: "cell", rx: 6 }); new NumObj(`dd:gv${r}${c}`, LAYER.main, { size: 24 }); }
+      for (let j = 0; j < S_LEN; j++) { new BoxObj(`dd:xc${r}${j}`, LAYER.under, { cls: "cell", rx: 6 }); new NumObj(`dd:xv${r}${j}`, LAYER.main, { size: 20 }); }
+      T(`dd:xrl${r}`, { text: DD.prefix[r], size: 18, anchor: "end", textCls: "token-text" });
+    }
+    for (let j = 0; j < S_LEN; j++) T(`dd:xcl${j}`, { text: DD.source[j], size: 18, textCls: "token-text" });
+    T("dd:gtitle", { rich: "softmax(\\i{QK}^{T} / √64 + mask):  (2×64)(64×2) → 2×2", size: 22, textCls: "serif muted" });
+    T("dd:gnote", { text: "first row cannot look ahead · second row sees both", size: 20, textCls: "note-text" });
+    T("dd:xtitle", { rich: "cross-attention weights (head 1):  1 × \\i{s}  →  2 × \\i{s}", size: 22, textCls: "serif muted" });
+    new TextObj("dd:xdims", LAYER.main, { parts: [["\\i{Q}", "f-q"], [": 2 × 64 from the decoder   ·   ", null], ["\\i{K}", "f-k"], [", ", null], ["\\i{V}", "f-v"], [": \\i{s} × 64 from the encoder   ·   (2×64)(64×\\i{s}) → 2×\\i{s}", null]], size: 20, textCls: "serif muted" });
+    // 11 · after six layers, only the newest row predicts the next token
+    cm("dd:H2", DD.out, (r) => `dd.out.${r}`, { lead: 3, size: 24, rowH: 64, mid: 380, tone: "x", vmax: ddX, hlRow: DD.next[1].row }); // the newest row
+    T("dd:H2lab", { rich: `after ${PD.layers} layers ∈ ℝ^{2×512}`, size: 24, anchor: "start", textCls: "serif" });
+    T("dd:tcount", { text: "", size: 22, anchor: "start", textCls: "serif muted" });
+    // 12 · summary
+    const sumLines = [
+      ["Decoder representation", "\\i{t} × 512"],
+      ["Masked self-attention, per head", "\\i{Q}, \\i{K}, \\i{V}: \\i{t} × 64   ·   scores \\i{t} × \\i{t}"],
+      ["8 heads → Concat · \\i{W}^{O}", "\\i{t} × 512"],
+      ["Cross-attention, per head", "\\i{Q}: \\i{t} × 64 (decoder)   ·   \\i{K}, \\i{V}: \\i{s} × 64 (encoder)   ·   scores \\i{t} × \\i{s}"],
+      ["8 heads → Concat · \\i{W}^{O}", "\\i{t} × 512"],
+      ["Feed-forward", "\\i{t} × 512 → \\i{t} × 2048 → \\i{t} × 512"],
+      ["Decoder layers", "× 6, each with its own weights"],
+      ["Newest position", "1 × 512 → Linear → 1 × |Vocab| → softmax → next token"],
+    ];
+    sumLines.forEach(([a, b], k) => {
+      T(`dd:sum:a${k}`, { rich: a, size: 24, anchor: "end", textCls: "serif muted" });
+      T(`dd:sum:b${k}`, { rich: b, size: 26, anchor: "start", textCls: "serif" });
+    });
+    T("dd:sumtitle", { text: "INSIDE THE DECODER — SHAPES FOR PREFIX LENGTH t AND SOURCE LENGTH s", size: 15, textCls: "lane-tag" });
+    T("dd:sumnote", { rich: `this example: \\i{s} = ${S_LEN}, \\i{t} = 1 … ${DD.generated.length}`, size: 20, textCls: "dims-text" });
+    T("dd:fin1", { text: "Masked self-attention mixes information across the output generated so far.", size: 30, textCls: "caption" });
+    T("dd:fin2", { text: "Cross-attention brings information in from the encoded input.", size: 30, textCls: "caption" });
     // Explore: its own copy of the attention table (exploring never rebinds the guided scenes' numbers)
     new TextObj("ex:qword", LAYER.main, { text: TOKENS[FOCUS], size: 43, textCls: "token-text" });
     new DotObj("ex:qnode", LAYER.main, { r: 5.5, cls: "f-n", glow: "g-node" });
@@ -2574,6 +2900,287 @@ body.exploring .ex-hit:hover { fill: rgba(207, 217, 235, 0.05); }
       .put("p:u:t3", { x: U.rx, y: U.t3, o: 1 }).put("p:u:d3", { x: U.rx, y: U.d3, o: 1 })
       .put("p:u:l1", { x: U.rx, y: U.l1, o: 1 }).put("p:u:l2", { x: U.rx, y: U.l2, o: 1 });
     return L.put("p:final", { x: 960, y: U.fin, o: 1 });
+  }
+
+  // ---- Inside the decoder (optional branch): one decoder layer opened up at paper scale, on Scene 10's example.
+  // These are positions only; every number shown is bound to the engine's paperDecoder arrays.
+  const HUDd = (L, cr = -1) => { HUDp(L); if (cr >= 0) L.put(`dd:cr${cr}`, { x: 960, y: 176, o: 1 }); return L; };
+  // a compressed vector centred at (x, y): its label ends just left of the brackets, its shape starts just right
+  function cvec(L, id, x, y, { lab = null, dim = null, mid, gap = 18, dy = 9, ...rest } = {}) {
+    const o = REG.get(id), hw = o.halfW(mid ?? o.mid0);
+    L.put(id, { x, y, s: 1, o: 1, ...(mid !== undefined ? { mid } : {}), ...rest });
+    if (lab) L.put(lab, { x: x - hw - gap, y: y + dy, o: 1 });
+    if (dim) L.put(dim, { x: x + hw + gap, y: y + dy - 1, o: 1 });
+    return L;
+  }
+  const arrowV = (x, y0, y1) => polyGeo([[x, y0], [x, y1]]);
+  const arrowH = (x0, x1, y) => polyGeo([[x0, y], [x1, y]]);
+
+  // 1 · <START> → embedding → × √512 → + PE → x_START
+  const DS = { x: 1000, tok: 290, raw: 414, emb: 508, pe: 602, rule: 654, xY: 714, note: 814 };
+  function Ld_start() {
+    const L = cap(HUDd(new Layout(), 0), "dstart"), hw = REG.get("dd:raw").halfW();
+    L.put("dtok:0", { x: DS.x, y: DS.tok, s: 0.75, o: 1, pill: 1 })
+      .put("dd:wtok", { geo: arrowV(DS.x, DS.tok + 22, DS.raw - 64), o: 1, draw: 1 });
+    cvec(L, "dd:raw", DS.x, DS.raw, { lab: "dd:rawlab", ix: 1 });
+    cvec(L, "dd:emb", DS.x, DS.emb, { lab: "dd:emblab", dim: "dd:sq" });
+    cvec(L, "dd:pe", DS.x, DS.pe, { lab: "dd:pelab" });
+    L.put("dd:rule", { geo: arrowH(DS.x - hw, DS.x + hw, DS.rule), o: 1, draw: 1 });
+    cvec(L, "dd:x", DS.x, DS.xY, { lab: "dd:xlab", dim: "dd:xshape", glow: 1, dy: 10 });
+    return L.put("dd:note1", { x: 960, y: DS.note, o: 1 });
+  }
+
+  // 2–3 · masked multi-head self-attention at t = 1: head 1 in full, heads 2–8 as tiles. Every head receives a
+  // copy of the WHOLE 512-d x_START (never a 64-d slice) and projects it with its own 512 × 64 matrices.
+  const DH = { xY: 254, tag: 322, copyW: 384, rows: { q: 360, k: 422, v: 484 }, labR: 800, chain: 560, zY: 630,
+    tile: { tag: 692, copy: 722, qkv: 752, out: 790 }, note: 872 };
+  const tileX = (h) => 960 + (h - 4) * 250;
+  const h1VecX = () => DH.labR + 18 + REG.get("dd:q1").halfW();
+  function selfBand(L, { dims = true } = {}) {
+    cvec(L, "dd:x", 960, DH.xY, { lab: "dd:xlab", dim: "dd:xshape", dy: 10 });
+    L.put("dd:h1tag", { x: 100, y: DH.tag, o: 1 }).put("dd:mx0", { x: 100 + DH.copyW / 2, y: DH.rows.k, w: DH.copyW, h: 14, s: 1, o: 1 })
+      .put("dd:mx0lab", { x: 100 + DH.copyW / 2, y: DH.rows.k + 36, o: 1 });
+    const vx = h1VecX(), x0 = 100 + DH.copyW + 12;
+    for (const b of BRANCHES) {
+      const y = DH.rows[b], x1 = DH.labR - REG.get(`dd:${b}1lab`).width() - 14;
+      L.put(`dd:hw:${b}`, { geo: [x0, DH.rows.k, x0 + 46, DH.rows.k, x1 - 46, y, x1, y], o: 1, draw: 1 });
+      cvec(L, `dd:${b}1`, vx, y, { lab: `dd:${b}1lab`, dim: dims ? `dd:${b}1dim` : null });
+    }
+    return L;
+  }
+  function headTile(L, h, out = false) {
+    const x = tileX(h), T = DH.tile;
+    L.put(`dd:ht${h}`, { x: x - 96, y: T.tag, o: 1 }).put(`dd:hd${h}`, { x: x + 18, y: T.tag, o: 1 })
+      .put(`dd:mx${h}`, { x, y: T.copy, w: 192, h: 10, s: 1, o: 1 });
+    BRANCHES.forEach((b, i) => L.put(`dd:h${b}${h}`, { x: x + 44 * (i - 1), y: T.qkv, w: 24, h: 10, s: 1, o: 1 }));
+    if (out) L.put(`dd:hs${h}`, { x: x + 12, y: T.out + 6, o: 1 }).put(`dd:hz${h}`, { x: x + 44, y: T.out, w: 24, h: 10, s: 1, o: 1 });
+    return L;
+  }
+  function Ld_heads() {
+    const L = cap(selfBand(HUDd(new Layout(), 1)), "dheads");
+    for (let h = 1; h < PD.nHeads; h++) headTile(L, h);
+    return L.put("dd:note2", { x: 960, y: DH.note, o: 1 });
+  }
+  // the 1 × 1 chain of head 1: q₁k₁ᵀ → ÷ √64 → softmax = [1]
+  const CH1 = { s: 560, ss: 1040, sa: 1310, note: 1380 };
+  function Ld_t1() {
+    const L = cap(selfBand(HUDd(new Layout(), 1)), "dt1"), y = DH.chain, bw = REG.get("dd:s1").bw;
+    for (let h = 1; h < PD.nHeads; h++) headTile(L, h, true);
+    L.put("dd:s1", { x: CH1.s, y, s: 1, o: 1 }).put("dd:s1lab", { x: CH1.s - bw - 14, y: y + 10, o: 1 })
+      .put("dd:s1dim", { x: CH1.s + bw + 16 + REG.get("dd:s1dim").width() / 2, y: y + 7, o: 1 });
+    const a0 = CH1.s + bw + 32 + REG.get("dd:s1dim").width(), a1 = CH1.ss - bw - 18;
+    L.put("dd:ar1", { geo: arrowH(a0, a1, y), o: 1, draw: 1 }).put("dd:ss1lab", { x: (a0 + a1) / 2, y: y - 16, o: 1 })
+      .put("dd:ss1", { x: CH1.ss, y, s: 1, o: 1 })
+      .put("dd:ar2", { geo: arrowH(CH1.ss + bw + 18, CH1.sa - bw - 18, y), o: 1, draw: 1 }).put("dd:sa1lab", { x: (CH1.ss + CH1.sa) / 2, y: y - 16, o: 1 })
+      .put("dd:sa1", { x: CH1.sa, y, s: 1, o: 1 })
+      .put("dd:note3", { x: 960, y: DH.note, o: 1 });
+    return cvec(L, "dd:z1", h1VecX(), DH.zY, { lab: "dd:z1lab", dim: "dd:z1dim" });
+  }
+  // 4 · the eight head outputs concatenate back to 512, then W^O, the residual and LayerNorm (post-LN)
+  const DC = { x: 1100, catLab: 300, cat: 334, wo: 434, woS: 96, mh: 570, res: 634, rule: 676, y: 730 };
+  function Ld_concat() {
+    const L = cap(HUDd(new Layout(), 1), "dconcat"), cw = PD.dModel * PS.k;
+    L.put("dd:catlab", { x: DC.x, y: DC.catLab, o: 1 }).put("dd:cat", { x: DC.x, y: DC.cat, w: cw, h: 16, s: 1, o: 1, glow: 0.3 })
+      .put("dd:catdim", { x: DC.x + cw / 2 + 24, y: DC.cat + 7, o: 1 })
+      .put("dd:mw1", { geo: arrowV(DC.x, DC.cat + 16, DC.wo - DC.woS / 2 - 10), o: 1, draw: 1 })
+      .put("dd:wo", { x: DC.x, y: DC.wo, w: DC.woS, h: DC.woS, s: 1, o: 1, glow: 0.25 })
+      .put("dd:wolab", { x: DC.x + DC.woS / 2 + 26, y: DC.wo - 4, o: 1 }).put("dd:wodim", { x: DC.x + DC.woS / 2 + 26, y: DC.wo + 26, o: 1 })
+      .put("dd:mw2", { geo: arrowV(DC.x, DC.wo + DC.woS / 2 + 10, DC.mh - 34), o: 1, draw: 1 });
+    cvec(L, "dd:mh", DC.x, DC.mh, { lab: "dd:mhlab" });
+    cvec(L, "dd:x", DC.x, DC.res, { lab: "dd:reslab", dim: "dd:resnote" });
+    const hw = REG.get("dd:mh").halfW();
+    L.put("dd:rule2", { geo: arrowH(DC.x - hw, DC.x + hw, DC.rule), o: 1, draw: 1 });
+    return cvec(L, "dd:y", DC.x, DC.y, { lab: "dd:ylab", dim: "dd:yshape" });
+  }
+
+  // 5–7 · encoder–decoder attention, one table: per source token j its encoder row e_j, key k_j, weight α_j and
+  // value v_j on one line; the decoder state on the right. Q from the decoder, K and V from the encoder output.
+  const CT = { row0: 404, dy: 64, tokR: 190, eX: 400, kX: 738, scX: 886, barX: 928, vX: 1214, dX: 1690, hdr: 354, tag: 314, foot: 712,
+    q: 520, czY: 640, cat: 740, z: 818 };
+  const ctY = (j) => CT.row0 + j * CT.dy;
+  const crossBarLen = (a) => 220 * a; // cross-attention bars (verified by audit() as kind "cbar")
+  const crossA = (j) => DD.layers[0].cross.heads[0].A[0][j];
+  function crossBase(L, stage) {
+    SRC_IDS.forEach((id, j) => { const w = REG.get(id).w * 0.5; L.put(id, { x: CT.tokR - w / 2, y: ctY(j) + 8, s: 0.5, o: 1, pill: 0 }); });
+    const mY = ctY((S_LEN - 1) / 2), foot = ctY(S_LEN - 1) + 44;
+    L.put("dd:Etag", { x: CT.eX - 90, y: CT.tag, o: 1 }).put("dd:Elab", { x: CT.eX, y: CT.hdr, o: 1 }).put("dd:E", { x: CT.eX, y: mY, s: 1, o: 1 })
+      .put("dd:K", { x: CT.kX, y: mY, s: 1, o: 1 }).put("dd:Klab", { x: CT.kX, y: CT.hdr, o: 1 }).put("dd:Kdim", { x: CT.kX, y: foot + 6, o: 1 })
+      .put("dd:V", { x: CT.vX, y: mY, s: 1, o: 1 }).put("dd:Vlab", { x: CT.vX, y: CT.hdr, o: 1 }).put("dd:Vdim", { x: CT.vX, y: foot + 6, o: 1 });
+    // the decoder side: y → W_Q → q
+    const yq = REG.get("dd:yq"), cq = REG.get("dd:cq");
+    L.put("dd:Dtag", { x: CT.dX, y: CT.tag, o: 1 });
+    cvec(L, "dd:yq", CT.dX, ctY(0), { lab: "dd:yqlab", gap: 14 });
+    L.put("dd:wq", { geo: arrowV(CT.dX, ctY(0) + 26, CT.q - 30), o: 1, draw: 1 })
+      .put("dd:cqlab", { x: CT.dX + 16, y: (ctY(0) + CT.q) / 2 + 8, o: 1 })
+      .put("dd:cq", { x: CT.dX, y: CT.q, s: 1, o: 1, glow: stage === 0 ? 0.7 : 0 })
+      .put("dd:cqdim", { x: CT.dX, y: CT.q + 44, o: 1 });
+    if (stage >= 1) {
+      const amax = Math.max(...DD.layers[0].cross.heads[0].A[0]), ax = (CT.scX - 26 + CT.barX + crossBarLen(amax)) / 2; // centre of the α column
+      L.put("dd:ahd", { x: ax, y: CT.hdr, o: 1 }).put("dd:scdim", { x: ax, y: foot + 6, o: 1 })
+        .put("dd:asum", { x: ax, y: foot + 40, o: 1 }).put("dd:scnote", { x: ax, y: foot + 76, o: 1 });
+      for (let j = 0; j < S_LEN; j++) {
+        const src = `dd.layers.0.cross.heads.0.A.0.${j}`;
+        L.put(`dd:sc${j}`, { x: CT.scX, y: ctY(j), s: 1, o: 1, src, d: 2, tc: "" })
+          .put(`dd:bar${j}`, { x: CT.barX, y: ctY(j), o: 1, w: crossBarLen(crossA(j)), alphaSrc: src, kind: "cbar" });
+      }
+    }
+    return L;
+  }
+  function Ld_cross() { return cap(crossBase(HUDd(new Layout(), 2), 0), "dcross"); }
+  function Ld_scores() { return cap(crossBase(HUDd(new Layout(), 2), 1), "dscores"); }
+  // the weighted values flow from the encoder into the decoder: head_1 = Σ_j α_j v_j, then 8 heads → Concat → W^O
+  function crossStreams(L) {
+    const V = REG.get("dd:V"), cz = REG.get("dd:cz"), x0 = CT.vX + V.halfW() + 8, x1 = CT.dX - cz.halfW() - 12;
+    for (let j = 0; j < S_LEN; j++) {
+      const y = ctY(j), a = crossA(j);
+      L.put(`dd:st${j}`, { geo: [x0, y, x0 + 0.55 * (x1 - x0), y, x1 - 0.5 * (x1 - x0), CT.czY, x1, CT.czY], o: alphaOpacity(a), draw: 1, sw: alphaWidth(a), alphaSrc: `dd.layers.0.cross.heads.0.A.0.${j}` });
+    }
+    return L;
+  }
+  function Ld_values() {
+    const L = cap(crossStreams(crossBase(HUDd(new Layout(), 2), 2)), "dvalues"), cw = PD.dModel * PS.k;
+    L.put("dd:czlab", { x: CT.dX, y: CT.czY - 34, o: 1 }).put("dd:cz", { x: CT.dX, y: CT.czY, s: 1, o: 1, glow: 0.6 })
+      .put("dd:cw1", { geo: arrowV(CT.dX, CT.czY + 24, CT.cat - 46), o: 1, draw: 1 })
+      .put("dd:ccatlab", { x: CT.dX, y: CT.cat - 20, o: 1 }).put("dd:ccat", { x: CT.dX, y: CT.cat, w: cw, h: 14, s: 1, o: 1, glow: 0.3 })
+      .put("dd:cnorm", { x: CT.dX - 16, y: (CT.cat + CT.z) / 2 + 8, o: 1 })
+      .put("dd:cw2", { geo: arrowV(CT.dX, CT.cat + 12, CT.z - 26), o: 1, draw: 1 });
+    return cvec(L, "dd:z", CT.dX, CT.z, { lab: "dd:zlab", gap: 14 }).put("dd:zshape", { x: CT.dX, y: CT.z + 44, o: 1 });
+  }
+
+  // 8 · the position-wise feed-forward network, 512 → 2048 → ReLU → 512, then Add & Norm: one decoder layer done
+  const DF = { x: 960, z: 292, a1: [318, 384], hid: 414, hidLab: 452, a2: [474, 538], ffo: 568, a3: [594, 658], l1: 690, l1lab: 740 };
+  const ffnMid = () => REG.get("dd:z").midFor(REG.get("dd:ffo").halfW());
+  function Ld_ffn() {
+    const L = cap(HUDd(new Layout(), 3), "dffn");
+    const zm = ffnMid(), zs = REG.get("dd:zshape");
+    cvec(L, "dd:z", DF.x, DF.z, { lab: "dd:zlab", mid: zm }).put("dd:zshape", { x: DF.x + REG.get("dd:z").halfW(zm) + 18 + zs.width() / 2, y: DF.z + 8, o: 1 });
+    L.put("dd:fw1", { geo: arrowV(DF.x, DF.a1[0], DF.a1[1]), o: 1, draw: 1 }).put("dd:w1lab", { x: DF.x + 18, y: (DF.a1[0] + DF.a1[1]) / 2 + 8, o: 1 })
+      .put("dd:hid", { x: DF.x, y: DF.hid, w: PD.dFF * 0.5, h: 18, s: 1, o: 1, glow: 0.35 })
+      .put("dd:hidlab", { x: DF.x - 16, y: DF.hidLab, o: 1 }).put("dd:zeros", { x: DF.x + 16, y: DF.hidLab, o: 1 })
+      .put("dd:fw2", { geo: arrowV(DF.x, DF.a2[0], DF.a2[1]), o: 1, draw: 1 }).put("dd:w2lab", { x: DF.x + 18, y: (DF.a2[0] + DF.a2[1]) / 2 + 8, o: 1 });
+    cvec(L, "dd:ffo", DF.x, DF.ffo, { lab: "dd:ffolab", dim: "dd:ffoshape" });
+    L.put("dd:fw3", { geo: arrowV(DF.x, DF.a3[0], DF.a3[1]), o: 1, draw: 1 }).put("dd:ffnorm", { x: DF.x + 18, y: (DF.a3[0] + DF.a3[1]) / 2 + 8, o: 1 });
+    cvec(L, "dd:l1", DF.x, DF.l1, { dim: "dd:l1shape", glow: 0.8 });
+    return L.put("dd:l1lab", { x: DF.x, y: DF.l1lab, o: 1 });
+  }
+  // 9 · that layer is one of six, each with its own weights; the encoder output feeds every cross-attention
+  const DLY = { x: 1060, w: 420, h: 56, y1: 790, gap: 90, busX: 770, eX: 520, eY: 790 };
+  const layerY = (k) => DLY.y1 - (k - 1) * DLY.gap;
+  function Ld_layers() {
+    const L = cap(HUDd(new Layout(), 4), "dlayers"), E = REG.get("dd:E"), left = DLY.x - DLY.w / 2;
+    for (let k = 1; k <= PD.layers; k++) {
+      L.put(`dd:L${k}`, { x: DLY.x, y: layerY(k), w: DLY.w, h: DLY.h, s: 1, o: k === 1 ? 1 : 0.8, lo: 1, glow: k === 1 ? 0.5 : 0 })
+        .put(`dd:tap${k}`, { geo: arrowH(DLY.busX, left - 8, layerY(k)), o: 1, draw: 1 });
+      // the stream through the stack: x_START into layer 1, each layer's output into the next
+      const y0 = k === 1 ? DLY.y1 + DLY.h / 2 + 44 : layerY(k - 1) - DLY.h / 2 - 3;
+      L.put(`dd:lup${k - 1}`, { geo: arrowV(DLY.x, y0, layerY(k) + DLY.h / 2 + 5), o: k === 1 ? 1 : 0.7, draw: 1 });
+    }
+    L.put("dd:lin0lab", { x: DLY.x, y: DLY.y1 + DLY.h / 2 + 70, o: 1 });
+    const eh = (S_LEN * E.crowH) / 2, er = DLY.eX + E.cw / 2 + 8;
+    return L.put("dd:E", { x: DLY.eX, y: DLY.eY, s: 1, o: 1, c: 1 }).put("dd:Etag", { x: DLY.eX, y: DLY.eY - eh - 18, o: 1 })
+      .put("dd:bus", { geo: polyGeo([[er, DLY.eY], [DLY.busX, DLY.eY], [DLY.busX, layerY(PD.layers)]]), o: 1, draw: 1 })
+      .put("dd:buslab", { x: DLY.busX - 18, y: layerY(3.5) + 7, o: 1 })
+      .put("dd:n6", { x: DLY.x + DLY.w / 2 + 44, y: layerY(3.5) - 10, o: 1 })
+      .put("dd:sublab", { x: DLY.x + DLY.w / 2 + 44, y: layerY(3.5) + 30, o: 1 });
+  }
+
+  // 10–11 · the newest position's 512 numbers → Linear → softmax → next token, appended and fed back
+  const DT = { x: 800, hl: 290, hlNote: 334, lin: 412, sm: 494, bar0: 590, dy: 46, wordR: 744, barX: 764, note: 836, outX: 1360, outY: 640, inY: 830, loopX: 1888 };
+  const pipeY = { a1: [352, 390], a2: [434, 472], a3: [516, 556] };
+  function vocabPipe(L) {
+    return L.put("dd:tw1", { geo: arrowV(DT.x, pipeY.a1[0], pipeY.a1[1]), o: 1, draw: 1 })
+      .put("dec:lin", { x: DT.x, y: DT.lin, w: 260, h: 40, s: 1, o: 1, lo: 1, glow: 0 }).put("dd:lindim", { x: DT.x + 156, y: DT.lin + 8, o: 1 })
+      .put("dd:tw2", { geo: arrowV(DT.x, pipeY.a2[0], pipeY.a2[1]), o: 1, draw: 1 })
+      .put("dec:sm", { x: DT.x, y: DT.sm, w: 260, h: 40, s: 1, o: 1, lo: 1, glow: 0 }).put("dd:smdim", { x: DT.x + 156, y: DT.sm + 8, o: 1 })
+      .put("dd:tw3", { geo: arrowV(DT.x, pipeY.a3[0], pipeY.a3[1]), o: 1, draw: 1 });
+  }
+  function vocabBars(L, pre, step, { pick = true, o = 1 } = {}) {
+    const d = 2, nx = DD.next[step];
+    nx.vocab.forEach((w, k) => {
+      const y = DT.bar0 + k * DT.dy, p = nx.probs[k], src = `dd.next.${step}.probs.${k}`, wid = `dd:${pre}w${k}`;
+      if (w === "…") L.put(wid, { x: DT.wordR, y: y + 8, o });
+      else L.put(wid, { x: DT.wordR - (REG.get(wid).w * 0.5) / 2, y: y + 8, s: 0.5, o, pill: pick && k === 0 ? 1 : 0 });
+      L.put(`dd:${pre}b${k}`, { x: DT.barX, y, o, w: probLen(p), alphaSrc: src, kind: "pbar" })
+        .put(`dd:${pre}v${k}`, { x: DT.barX + probLen(p) + 14 + numW(22, d, false) / 2, y, s: 1, o, src, d });
+    });
+    return L.put("dd:pnote", { x: DT.x, y: DT.note, o: 1 });
+  }
+  // the output so far and the decoder input; tokens laid out left to right from x
+  function seqRow(L, ids, x, y) {
+    ids.forEach((id) => { const w = REG.get(id).w * 0.5; L.put(id, { x: x + w / 2, y, s: 0.5, o: 1, pill: 0 }); x += w + 14; });
+    return x - 14;
+  }
+  const OUT_IDS = ["outl:0", "outl:1", "outl:2", "dd:o3", "dd:o4", "dd:o5"]; // L' animal est fatigué . <END>
+  const IN_IDS = [...DTOK, "dd:i5"]; // <START> L' animal est fatigué .
+  function genRows(L, n, { loop = true } = {}) {
+    L.put("dd:outtag", { x: DT.outX, y: DT.outY - 40, o: 1 }).put("dd:intag", { x: DT.outX, y: DT.inY - 40, o: 1 });
+    const xo = seqRow(L, OUT_IDS.slice(0, n), DT.outX, DT.outY), xi = seqRow(L, IN_IDS.slice(0, n + 1), DT.outX, DT.inY);
+    if (loop) L.put("dd:loop", { geo: polyGeo([[xo + 14, DT.outY - 8], [DT.loopX, DT.outY - 8], [DT.loopX, DT.inY - 8], [xi + 14, DT.inY - 8]], 18), o: 1, draw: 1 })
+      .put("dd:looplab", { x: (DT.outX + DT.loopX) / 2 - 16, y: (DT.outY + DT.inY) / 2 + 2, o: 1 });
+    return L;
+  }
+  function Ld_token() {
+    const L = cap(HUDd(new Layout(), 5), "dtoken");
+    cvec(L, "dd:hl", DT.x, DT.hl, { lab: "dd:hllab", dim: "dd:hlshape", glow: 0.6, dy: 10 });
+    L.put("dd:hlnote", { x: DT.x, y: DT.hlNote, o: 1 });
+    return genRows(vocabBars(vocabPipe(L), "p", 0), 1);
+  }
+  // 12 · t = 2: two positions; now the causal mask blocks a real future position, and cross-attention grows to 2 × s
+  const DM = { xX: 640, xY: 330, nY: 290, qkvX: [1044, 1120, 1196], gx: 560, gy: 600, gdx: 108, gdy: 58, cw: 92, ch: 46, xgx: 1180, xgdx: 112, xcw: 96 };
+  // the decoder's two rows; labelled by the input tokens themselves (t = 2), or by name when those are in the input row
+  function x2Rows(L, id, y, tokens = true) {
+    const X = REG.get(id), hw = X.halfW();
+    L.put(id, { x: DM.xX, y, s: 1, o: 1 });
+    [0, 1].forEach((r) => {
+      if (!tokens) { L.put(`dd:grl${r}`, { x: DM.xX - hw - 18, y: y + X.rowOff(r) + 7, o: 1 }); return; }
+      const t = `dtok:${r}`, w = REG.get(t).w * 0.5;
+      L.put(t, { x: DM.xX - hw - 18 - w / 2, y: y + X.rowOff(r) + 8, s: 0.5, o: 1, pill: 0 });
+    });
+    return hw;
+  }
+  function Ld_mask() {
+    const L = cap(HUDd(new Layout(), 6), "dmask"), hw = x2Rows(L, "dd:X2", DM.xY), top = DM.xY - REG.get("dd:X2").rowH;
+    L.put("dd:X2lab", { x: DM.xX, y: top - 22, o: 1 })
+      .put("dd:t2w", { geo: arrowH(DM.xX + hw + 14, DM.qkvX[0] - 44, DM.xY), o: 1, draw: 1 });
+    BRANCHES.forEach((b, i) => L.put(`dd:t2${b}`, { x: DM.qkvX[i], y: DM.xY, w: pW(b), h: 32, s: 1, o: 1, glow: 0.3 }));
+    L.put("dd:t2lab", { x: DM.qkvX[1], y: DM.xY + 52, o: 1 });
+    // the 2 × 2 self-attention grid of head 1: QKᵀ/√64 → causal mask (−∞) → softmax, row by row
+    L.put("dd:gtitle", { x: DM.gx + DM.gdx / 2, y: DM.gy - 76, o: 1 });
+    for (let r = 0; r < 2; r++) {
+      L.put(`dd:grl${r}`, { x: DM.gx - DM.cw / 2 - 16, y: DM.gy + r * DM.gdy + 7, o: 1 }).put(`dd:gcl${r}`, { x: DM.gx + r * DM.gdx, y: DM.gy - 40, o: 1 });
+      for (let c = 0; c < 2; c++) {
+        const masked = c > r, x = DM.gx + c * DM.gdx, y = DM.gy + r * DM.gdy;
+        L.put(`dd:gc${r}${c}`, { x, y, w: DM.cw, h: DM.ch, s: 1, o: 1, lo: 0, cls: masked ? "cell-masked" : "cell" })
+          .put(`dd:gv${r}${c}`, { x, y, s: 1, o: 1, src: `dd.layers.0.self.heads.0.A.${r}.${c}`, d: masked ? 0 : 2, tc: masked ? "masked" : "" });
+      }
+    }
+    L.put("dd:gnote", { x: DM.gx + DM.gdx / 2, y: DM.gy + DM.gdy + 66, o: 1 });
+    // encoder–decoder attention: 1 × s at t = 1 (the weights of the cross-attention beat) → 2 × s now
+    L.put("dd:xtitle", { x: DM.xgx + 2 * DM.xgdx, y: DM.gy - 76, o: 1 }).put("dd:xdims", { x: DM.xgx + 2 * DM.xgdx, y: DM.gy + DM.gdy + 66, o: 1 });
+    for (let j = 0; j < S_LEN; j++) L.put(`dd:xcl${j}`, { x: DM.xgx + j * DM.xgdx, y: DM.gy - 40, o: 1 });
+    for (let r = 0; r < 2; r++) {
+      L.put(`dd:xrl${r}`, { x: DM.xgx - DM.xcw / 2 - 14, y: DM.gy + r * DM.gdy + 7, o: 1 });
+      for (let j = 0; j < S_LEN; j++) L.put(`dd:xc${r}${j}`, { x: DM.xgx + j * DM.xgdx, y: DM.gy + r * DM.gdy, w: DM.xcw, h: DM.ch, s: 1, o: 1, lo: 0, cls: "cell" })
+        .put(`dd:xv${r}${j}`, { x: DM.xgx + j * DM.xgdx, y: DM.gy + r * DM.gdy, s: 1, o: 1, src: `dd.layers.0.cross.heads.0.A.${r}.${j}`, d: 2, tc: "" });
+    }
+    return L;
+  }
+  // 13 · after six layers: 2 × 512; only the newest row is projected to the vocabulary; repeat until <END>
+  function Ld_next() {
+    const L = cap(HUDd(new Layout(), 6), "dnext"), hw = x2Rows(L, "dd:H2", DM.nY, false), H = REG.get("dd:H2");
+    L.put("dd:H2", { hla: 1, glow: 0.4 }).put("dd:H2lab", { x: DM.xX + hw + 22, y: DM.nY + 8, o: 1 });
+    vocabBars(vocabPipe(L), "r", 1);
+    // the pipeline starts from the newest (bottom) row only
+    L.put("dd:tw1", { geo: arrowV(DT.x, DM.nY + H.rowOff(1) + H.rowH / 2 + 4, pipeY.a1[1]) });
+    genRows(L, OUT_IDS.length);
+    return L.put("dd:tcount", { x: DT.outX, y: DT.inY + 60, o: 1, text: `t = ${IN_IDS.length}  →  ${DD.generated[DD.generated.length - 1]}:  generation stops` });
+  }
+  // 14 · the shapes, for prefix length t and source length s
+  function Ld_summary() {
+    const L = HUDd(new Layout()), y0 = 286, dy = 54;
+    L.put("dd:sumtitle", { x: 960, y: y0 - 64, o: 1 });
+    for (let k = 0; k < 8; k++) L.put(`dd:sum:a${k}`, { x: 800, y: y0 + k * dy, o: 1 }).put(`dd:sum:b${k}`, { x: 840, y: y0 + k * dy, o: 1 });
+    return L.put("dd:sumnote", { x: 960, y: y0 + 8 * dy + 6, o: 1 }).put("dd:fin1", { x: 960, y: 830, o: 1 }).put("dd:fin2", { x: 960, y: 882, o: 1 });
   }
 
   // ---------------------------------------------------------------------------- EXPLORE
@@ -3536,8 +4143,402 @@ body.exploring .ex-hit:hover { fill: rgba(207, 217, 235, 0.05); }
     await pto(run, L, "p:final", { dur: 720 });
   }
 
+  // ---- Inside the decoder: choreography helpers
+  // a compressed vector or heat block draws in from the left; a vector's numbers and index header follow
+  async function drawIn(run, L, id, { dur = 700, delay = 0 } = {}) {
+    const o = REG.get(id), t = { ...o.layoutDefaults(), ...L.get(id) }, cm = o instanceof CMatObj;
+    if (delay) await run.wait(delay);
+    if (run.dead) return;
+    run.set(o, { ...t, draw: 0, glow: 0, ...(cm ? { nu: 0, ix: 0 } : {}) });
+    const ps = [run.tween(o, { draw: 1, glow: t.glow ?? 0 }, { dur, ease: EASE.out })];
+    if (cm) ps.push(run.tween(o, { nu: t.nu }, { dur: dur * 0.5, delay: dur * 0.45 }), run.tween(o, { ix: t.ix }, { dur: dur * 0.5, delay: dur * 0.6 }));
+    await Promise.all(ps);
+  }
+  // camera-style move: objects scale by k about (cx, cy), landing around (tx, ty), and fade to o
+  const zoomObjs = (run, objs, { cx, cy, tx = cx, ty = cy, k, o = 0, dur = 1200 }) =>
+    Promise.all(objs.map((ob) => run.tween(ob, { x: tx + k * (ob.x - cx), y: ty + k * (ob.y - cy), s: ob.s * k, o }, { dur, ease: EASE.inOut })));
+  // everything visible that layout L does not show (except `keep`) fades
+  const fadeExcept = (run, L, keep = [], dur = 420) =>
+    Promise.all([...REG.values()].filter((o) => o.id && o.o > 0.01 && !L.has(o.id) && !keep.includes(o.id)).map((o) => run.morph(o, { o: 0 }, { dur })));
+  const showAll = (run, L, ids, opts = {}) => Promise.all(ids.map((id, i) => pto(run, L, id, { ...opts, delay: (opts.delay ?? 0) + (opts.stagger ?? 0) * i })));
+  // a bar grows to its α (or probability) and its number rides along its end
+  async function growBar(run, L, bid, vid = null, { delay = 0, dur = 900 } = {}) {
+    if (run.dead) return;
+    const b = REG.get(bid), t = L.get(bid);
+    b.setAlphaSrc(t.alphaSrc, t.kind);
+    run.set(b, { x: t.x, y: t.y, o: t.o ?? 1, w: 0 });
+    const ps = [run.tween(b, { w: t.w }, { dur, delay, ease: EASE.out })];
+    if (vid) {
+      const v = REG.get(vid), tv = L.get(vid);
+      v.bind(tv.src, tv.d);
+      run.set(v, { x: t.x + 14, y: tv.y, s: 1, o: 0, tf: 1 });
+      ps.push(run.tween(v, { x: tv.x, o: tv.o ?? 1 }, { dur, delay, ease: EASE.out }));
+    }
+    await Promise.all(ps);
+  }
+  // a token that rides a path (the autoregressive loop), then settles into its place in layout L
+  async function rideLoop(run, L, tokId, { from, dur = 1100 } = {}) {
+    const lp = REG.get("dd:loop"), tl = L.get("dd:loop"), tok = REG.get(tokId);
+    await run.morph(lp, { geo: tl.geo }, { dur: 0 });
+    if (run.dead) return;
+    run.set(lp, { o: 1, draw: 0 });
+    run.set(tok, { x: from.x, y: from.y, s: 0.5, o: 1, pill: 0 });
+    const ride = { f: 0, apply() { const p = lp.pointAt(this.f); tok.set({ x: p.x, y: p.y + 8 }); } };
+    await Promise.all([run.tween(lp, { draw: 1 }, { dur }), run.tween(ride, { f: 1 }, { dur })]);
+    await pto(run, L, tokId, { dur: 420 });
+  }
+  // a small glowing dot from one point to another (a query reaching the keys)
+  async function flyDot(run, a, b, cls, { dur = 650, delay = 0, r = 5 } = {}) {
+    const dot = run.own(new DotObj(null, LAYER.fx, { r, cls: `f-${cls}`, glow: `g-${cls}` }));
+    run.set(dot, { x: a.x, y: a.y, o: 0 });
+    await run.wait(delay);
+    await run.tween(dot, { o: 1 }, { dur: 120 });
+    await run.tween(dot, { x: b.x, y: b.y }, { dur });
+    await run.tween(dot, { o: 0 }, { dur: 160 });
+  }
+  const HEADS = [...Array(PD.nHeads).keys()];
+  const DD_PACE = 0.8; // the deep dive's beats play at 0.8× their written durations (about 70 s in all)
+
+  // ---- Inside the decoder · 1: from the full Transformer, the encoder dims except its output; the decoder keeps only
+  // <START>; then a zoom into the decoder's input: token → embedding → × √512 → + PE → x_START (1 × 512)
+  async function ddStart(run) {
+    const L = Ld_start(), isEnc = (id) => /^(enc:|tok:|stok:)/.test(id);
+    await Promise.all([...REG.values()].filter((o) => o.id && o.o > 0.01).map((o) => {
+      const id = o.id;
+      if (/^p:/.test(id) || /^dtok:[1-9]/.test(id)) return run.morph(o, { o: 0 }, { dur: 500 });
+      if (isEnc(id) && id !== "enc:w4") return run.morph(o, { o: 0.22, ...(o instanceof BoxObj ? { glow: 0 } : {}) }, { dur: 700 });
+      if (USES.some(([u]) => u === id)) return run.morph(o, { glow: 0 }, { dur: 600 });
+      return null;
+    }));
+    if (run.dead) return;
+    // the encoder output still reaches the decoder's cross-attention
+    await Promise.all([pulse(run, "x:k", "k", { dur: 800 }), pulse(run, "x:v", "v", { dur: 800, delay: 90 })]);
+    if (run.dead) return;
+    const tok = REG.get("dtok:0"), rest = [...REG.values()].filter((o) => o.id && o.o > 0.01 && o.id !== "dtok:0" && !/^(title|status|tag:paper)$/.test(o.id));
+    await Promise.all([zoomObjs(run, rest, { cx: tok.x, cy: tok.y - 40, k: 2.4, dur: 1300 }), pto(run, L, "dtok:0", { dur: 1300 })]);
+    if (run.dead) return;
+    await showAll(run, L, ["cap:dstart", "dd:cr0"], { dur: 560 });
+    await reveal(run, L, [["dd:wtok"]], { dur: 380 });
+    await Promise.all([drawIn(run, L, "dd:raw", { dur: 760 }), pto(run, L, "dd:rawlab", { dur: 480, delay: 160 })]);
+    // × √512: the same row, rescaled
+    const emb = REG.get("dd:emb"), te = { ...emb.layoutDefaults(), ...L.get("dd:emb") };
+    run.set(emb, { ...te, y: L.get("dd:raw").y, o: 0.02, nu: 0 });
+    await Promise.all([run.tween(emb, { y: te.y, o: 1 }, { dur: 640 }), run.tween(emb, { nu: 1 }, { dur: 360, delay: 380 }), pto(run, L, "dd:emblab", { dur: 480, delay: 200 }), pto(run, L, "dd:sq", { dur: 480, delay: 420 })]);
+    await Promise.all([drawIn(run, L, "dd:pe", { dur: 640 }), pto(run, L, "dd:pelab", { dur: 480 })]);
+    await reveal(run, L, [["dd:rule"]], { dur: 320 });
+    await Promise.all([drawIn(run, L, "dd:x", { dur: 760 }), pto(run, L, "dd:xlab", { dur: 480 }), pto(run, L, "dd:xshape", { dur: 480, delay: 300 })]);
+    await pto(run, L, "dd:note1", { dur: 480 });
+  }
+
+  // ---- 2: masked multi-head self-attention — every head receives the WHOLE x_START, then projects it with its own
+  // 512 × 64 matrices (head 1 in full, heads 2–8 in parallel)
+  async function ddHeads(run) {
+    const L = Ld_heads(), X = REG.get("dd:x");
+    await fadeOutsideOf(run, L, 420);
+    if (run.dead) return;
+    await Promise.all([showAll(run, L, ["dd:x", "dd:xlab", "dd:xshape"], { dur: 760 }), showAll(run, L, ["cap:dheads", "dd:cr1"], { dur: 480, delay: 300 })]);
+    if (run.dead) return;
+    const G = X.geo(), sx = X.x + ((G.mid0 + G.mid1) / 2) * X.s, sw = (G.mid1 - G.mid0) * X.s, sh = G.sh * X.s;
+    await Promise.all(HEADS.map((h) => {
+      const m = REG.get(`dd:mx${h}`), t = L.get(`dd:mx${h}`);
+      run.set(m, { ...m.layoutDefaults(), x: sx, y: X.y, w: sw, h: sh, s: 1, o: 0.85 });
+      return run.tween(m, { x: t.x, y: t.y, w: t.w, h: t.h, o: 1 }, { dur: 860, delay: 60 * h });
+    }));
+    if (run.dead) return;
+    await showAll(run, L, ["dd:h1tag", "dd:mx0lab", ...HEADS.slice(1).map((h) => `dd:ht${h}`)], { dur: 380, stagger: 30 });
+    await reveal(run, L, [["dd:hw:q", "dd:hw:k", "dd:hw:v"]], { dur: 460 });
+    await Promise.all(BRANCHES.flatMap((b, i) => [drawIn(run, L, `dd:${b}1`, { dur: 620, delay: 130 * i }), pto(run, L, `dd:${b}1lab`, { dur: 420, delay: 130 * i }), pto(run, L, `dd:${b}1dim`, { dur: 420, delay: 280 + 130 * i })]));
+    if (run.dead) return;
+    await Promise.all(HEADS.slice(1).flatMap((h) => [pto(run, L, `dd:hd${h}`, { dur: 380, delay: 45 * h }), ...BRANCHES.map((b) => drawIn(run, L, `dd:h${b}${h}`, { dur: 480, delay: 45 * h + 60 }))]));
+    await pto(run, L, "dd:note2", { dur: 480 });
+  }
+
+  // ---- 3: t = 1 — a 1 × 1 score, ÷ √64 = 8, softmax over the one available position = [1]; head 1's output is v₁
+  async function ddT1(run) {
+    const L = Ld_t1(), q1 = REG.get("dd:q1"), k1 = REG.get("dd:k1");
+    await fadeOutsideOf(run, L, 300);
+    if (run.dead) return;
+    await Promise.all([run.tween(q1, { glow: 1 }, { dur: 300 }), run.tween(k1, { glow: 1 }, { dur: 300 })]);
+    await Promise.all([showAll(run, L, ["dd:s1", "dd:s1lab"], { dur: 480 }), pto(run, L, "dd:s1dim", { dur: 480, delay: 200 })]);
+    await Promise.all([run.tween(q1, { glow: 0 }, { dur: 300 }), run.tween(k1, { glow: 0 }, { dur: 300 })]);
+    await reveal(run, L, [["dd:ar1", "dd:ss1lab"], ["dd:ss1"]], { dur: 420, gap: 280 });
+    await reveal(run, L, [["dd:ar2", "dd:sa1lab"], ["dd:sa1"]], { dur: 420, gap: 280 });
+    await pto(run, L, "cap:dt1", { dur: 480 });
+    if (run.dead) return;
+    // head₁ = 1 · v₁: the value vector itself comes down
+    const v1 = REG.get("dd:v1"), z1 = REG.get("dd:z1"), tz = { ...z1.layoutDefaults(), ...L.get("dd:z1") };
+    run.set(z1, { ...tz, y: v1.y, o: 0.02 });
+    await Promise.all([run.tween(z1, { y: tz.y, o: 1 }, { dur: 760 }), pto(run, L, "dd:z1lab", { dur: 420, delay: 300 }), pto(run, L, "dd:z1dim", { dur: 420, delay: 400 })]);
+    if (run.dead) return;
+    // the other seven heads at once: α = 1, so each head's output is its own value vector
+    await Promise.all(HEADS.slice(1).flatMap((h) => {
+      const hv = REG.get(`dd:hv${h}`), hz = REG.get(`dd:hz${h}`), t = L.get(`dd:hz${h}`);
+      run.set(hz, { ...hz.layoutDefaults(), ...t, x: hv.x, y: hv.y, o: 0.02 });
+      return [pto(run, L, `dd:hs${h}`, { dur: 380, delay: 45 * h }), run.tween(hz, { x: t.x, y: t.y, o: 1 }, { dur: 560, delay: 45 * h + 100 })];
+    }));
+    await pto(run, L, "dd:note3", { dur: 480 });
+  }
+
+  // ---- 4: the eight 1 × 64 head outputs slide together (Concat, 512), then W^O, the residual and LayerNorm
+  async function ddConcat(run) {
+    const L = Ld_concat(), outs = ["dd:z1", ...HEADS.slice(1).map((h) => `dd:hz${h}`)];
+    await fadeExcept(run, L, outs, 400);
+    if (run.dead) return;
+    await run.morph("dd:z1", { c: 1 }, { dur: 480 });
+    const cat = L.get("dd:cat"), seg = cat.w / PD.nHeads;
+    await Promise.all(outs.map((id, h) => run.tween(REG.get(id), { x: cat.x - cat.w / 2 + seg * (h + 0.5), y: cat.y, ...(id === "dd:z1" ? {} : { w: seg, h: cat.h }) }, { dur: 860, delay: 45 * h })));
+    if (run.dead) return;
+    await Promise.all([pto(run, L, "dd:cat", { dur: 240 }), ...outs.map((id) => run.morph(id, { o: 0 }, { dur: 240 })), pto(run, L, "dd:catlab", { dur: 420 }), pto(run, L, "dd:catdim", { dur: 420, delay: 150 })]);
+    await reveal(run, L, [["dd:mw1"], ["dd:wo", "dd:wolab", "dd:wodim"], ["dd:mw2"]], { dur: 420, gap: 240 });
+    await Promise.all([drawIn(run, L, "dd:mh", { dur: 660 }), pto(run, L, "dd:mhlab", { dur: 420 })]);
+    // x_START takes the residual path down to MultiHead; the sum is normalised: y = LayerNorm(x + MultiHead)
+    await showAll(run, L, ["dd:x", "dd:reslab", "dd:resnote"], { dur: 860 });
+    await reveal(run, L, [["dd:rule2"]], { dur: 320 });
+    await Promise.all([drawIn(run, L, "dd:y", { dur: 700 }), pto(run, L, "dd:ylab", { dur: 420 }), pto(run, L, "dd:yshape", { dur: 420, delay: 300 })]);
+    await pto(run, L, "cap:dconcat", { dur: 560 });
+  }
+
+  // ---- 5: encoder–decoder attention — the decoder state y moves right; the encoder output E (s × 512) comes in on
+  // the left; K and V come out of E, q out of y
+  async function ddCross(run) {
+    const L = Ld_cross(), y = REG.get("dd:y"), ty = L.get("dd:yq");
+    await fadeExcept(run, L, ["dd:y"], 400);
+    if (run.dead) return;
+    await Promise.all([run.tween(y, { x: ty.x, y: ty.y, s: 0.45, o: 0 }, { dur: 860 }), pto(run, L, "dd:yq", { dur: 460, delay: 460 }),
+      showAll(run, L, ["dd:yqlab", "dd:Dtag"], { dur: 380, delay: 620 }), pto(run, L, "dd:cr2", { dur: 460 })]);
+    if (run.dead) return;
+    await Promise.all([...SRC_IDS.map((id, j) => pto(run, L, id, { dur: 460, delay: 55 * j })), drawIn(run, L, "dd:E", { dur: 760, delay: 160 }),
+      pto(run, L, "dd:Etag", { dur: 380 }), pto(run, L, "dd:Elab", { dur: 380, delay: 260 })]);
+    if (run.dead) return;
+    const E = REG.get("dd:E");
+    for (const id of ["dd:K", "dd:V"]) { const o = REG.get(id); run.set(o, { ...o.layoutDefaults(), ...L.get(id), x: E.x, o: 0.02, nu: 0 }); }
+    await Promise.all([
+      ...[["dd:K", 0], ["dd:V", 180]].flatMap(([id, dl]) => [run.tween(REG.get(id), { x: L.get(id).x, o: 1 }, { dur: 860, delay: dl }), run.tween(REG.get(id), { nu: 1 }, { dur: 380, delay: dl + 520 })]),
+      showAll(run, L, ["dd:Klab", "dd:Vlab", "dd:Kdim", "dd:Vdim"], { dur: 420, delay: 480, stagger: 90 }),
+    ]);
+    if (run.dead) return;
+    await reveal(run, L, [["dd:wq", "dd:cqlab"]], { dur: 460 });
+    await Promise.all([pulse(run, "dd:wq", "q", { dur: 460 }), drawIn(run, L, "dd:cq", { dur: 660, delay: 260 }), pto(run, L, "dd:cqdim", { dur: 420, delay: 560 })]);
+    await pto(run, L, "cap:dcross", { dur: 560 });
+  }
+
+  // ---- 6: one score per source token (q·k_j: 1 × s), ÷ √64, then softmax over the source
+  async function ddScores(run) {
+    const L = Ld_scores(), js = [...Array(S_LEN).keys()], cq = REG.get("dd:cq"), hd = L.get("dd:ahd");
+    const sc = (j, k) => `dd.layers.0.cross.heads.0.${k}.0.${j}`;
+    await fadeOutsideOf(run, L, 300);
+    if (run.dead) return;
+    run.set(REG.get("dd:schd"), { x: hd.x, y: hd.y, o: 0 });
+    await Promise.all([run.tween(REG.get("dd:schd"), { o: 1 }, { dur: 380 }), run.morph(cq, { glow: 1 }, { dur: 300 }), run.morph("dd:K", { glow: 0.8 }, { dur: 300 })]);
+    await Promise.all(js.map((j) => flyDot(run, { x: cq.x - cq.halfW(), y: cq.y }, { x: CT.scX + 30, y: ctY(j) }, "q", { dur: 620, delay: 45 * j })));
+    if (run.dead) return;
+    await Promise.all([...js.map((j) => run.morph(`dd:sc${j}`, { x: CT.scX, y: ctY(j), s: 1, o: 1, src: sc(j, "raw"), d: 2, tc: "" }, { dur: 380, delay: 45 * j })),
+      pto(run, L, "dd:scdim", { dur: 420 }), run.morph(cq, { glow: 0 }, { dur: 380 }), run.morph("dd:K", { glow: 0 }, { dur: 380 })]);
+    await run.wait(420);
+    // ÷ √64 = 8, all at once
+    run.set(REG.get("dd:schd2"), { x: hd.x, y: hd.y, o: 0 });
+    await Promise.all([run.morph("dd:schd", { o: 0 }, { dur: 300 }), run.tween(REG.get("dd:schd2"), { o: 1 }, { dur: 300, delay: 200 }), ...js.map((j) => run.morph(`dd:sc${j}`, { src: sc(j, "scaled") }, { dur: 560 }))]);
+    await run.wait(420);
+    // softmax over the s source positions: weights α_j (illustrative), the bars grow to them
+    await Promise.all([run.morph("dd:schd2", { o: 0 }, { dur: 300 }), pto(run, L, "dd:ahd", { dur: 420, delay: 200 }), ...js.map((j) => run.morph(`dd:sc${j}`, { src: sc(j, "A") }, { dur: 560 })),
+      ...js.map((j) => growBar(run, L, `dd:bar${j}`, null, { delay: 300 + 60 * j }))]);
+    await reveal(run, L, [["dd:asum"], ["dd:scnote", "cap:dscores"]], { dur: 460, gap: 220 });
+  }
+
+  // ---- 7: α_j v_j flow from the encoder into the decoder; Σ = head 1's output (1 × 64); with the other seven heads:
+  // Concat (1 × 512) → W^O → + y, LayerNorm → z
+  async function ddValues(run) {
+    const L = Ld_values(), js = [...Array(S_LEN).keys()];
+    await fadeOutsideOf(run, L, 300);
+    if (run.dead) return;
+    await Promise.all(js.map(async (j) => {
+      const id = `dd:st${j}`, st = REG.get(id), t = L.get(id), a = crossA(j);
+      await run.morph(st, { geo: t.geo, sw: t.sw, alphaSrc: t.alphaSrc }, { dur: 0 });
+      if (run.dead) return;
+      run.set(st, { o: t.o, draw: 0 });
+      const dot = run.own(new DotObj(null, LAYER.fx, { r: 3 + 9 * a, cls: "f-v", glow: "g-v" }));
+      const ride = { f: 0, apply() { const p = st.pointAt(this.f); dot.set({ x: p.x, y: p.y }); } };
+      run.set(dot, { o: 1 }); ride.apply();
+      await Promise.all([run.tween(st, { draw: 1 }, { dur: 1050 }), run.tween(ride, { f: 1 }, { dur: 1050 })]);
+      await run.tween(dot, { o: 0 }, { dur: 180 });
+    }));
+    if (run.dead) return;
+    await Promise.all([drawIn(run, L, "dd:cz", { dur: 660 }), pto(run, L, "dd:czlab", { dur: 420 })]);
+    await reveal(run, L, [["dd:cw1"]], { dur: 360 });
+    if (run.dead) return;
+    // seven more heads, each with its own weights, beside head 1; then they slide together into Concat
+    const cat = L.get("dd:ccat"), seg = cat.w / PD.nHeads, cz = REG.get("dd:cz");
+    const spread = (h) => cat.x + (h - (PD.nHeads - 1) / 2) * (seg + 10);
+    const first = run.own(new BlockObj(null, LAYER.fx, { url: HEAT.get("dd.layers.0.cross.heads.0.Z.0|all"), tone: "v", w: seg, h: cat.h }));
+    const strips = [first, ...HEADS.slice(1).map((h) => REG.get(`dd:cz${h}`))];
+    run.set(first, { x: cz.x, y: cz.y, s: 1, o: 1 });
+    strips.slice(1).forEach((b, i) => run.set(b, { ...b.layoutDefaults(), x: spread(i + 1), y: cat.y, w: seg, h: cat.h, s: 1, o: 0 }));
+    await Promise.all([run.tween(first, { x: spread(0), y: cat.y }, { dur: 620 }), ...strips.slice(1).map((b, i) => run.tween(b, { o: 1 }, { dur: 360, delay: 200 + 50 * i }))]);
+    await Promise.all(strips.map((b, h) => run.tween(b, { x: cat.x - cat.w / 2 + seg * (h + 0.5) }, { dur: 560 })));
+    if (run.dead) return;
+    await Promise.all([pto(run, L, "dd:ccat", { dur: 240 }), ...strips.map((b) => run.tween(b, { o: 0 }, { dur: 240 })), pto(run, L, "dd:ccatlab", { dur: 420 })]);
+    await reveal(run, L, [["dd:cw2", "dd:cnorm"]], { dur: 420 });
+    await Promise.all([drawIn(run, L, "dd:z", { dur: 660 }), pto(run, L, "dd:zlab", { dur: 420 }), pto(run, L, "dd:zshape", { dur: 420, delay: 300 })]);
+    await pto(run, L, "cap:dvalues", { dur: 560 });
+  }
+
+  // ---- 8: the position-wise FFN: 512 → 2048 (ReLU zeroes every negative unit) → 512, then Add & Norm
+  async function ddFfn(run) {
+    const L = Ld_ffn();
+    await fadeOutsideOf(run, L, 400);
+    if (run.dead) return;
+    await Promise.all([pto(run, L, "dd:cr3", { dur: 460 }), showAll(run, L, ["dd:z", "dd:zlab", "dd:zshape"], { dur: 860 })]);
+    await reveal(run, L, [["dd:fw1", "dd:w1lab"]], { dur: 420 });
+    if (run.dead) return;
+    const hp = REG.get("dd:hpre"), th = L.get("dd:hid");
+    run.set(hp, { ...hp.layoutDefaults(), ...th, o: 1, draw: 0 });
+    await run.tween(hp, { draw: 1 }, { dur: 860, ease: EASE.out });
+    await run.wait(260);
+    await Promise.all([pto(run, L, "dd:hid", { dur: 560 }), run.tween(hp, { o: 0 }, { dur: 560 }), pto(run, L, "dd:hidlab", { dur: 420 }), pto(run, L, "dd:zeros", { dur: 420, delay: 300 })]);
+    await reveal(run, L, [["dd:fw2", "dd:w2lab"]], { dur: 420 });
+    await Promise.all([drawIn(run, L, "dd:ffo", { dur: 660 }), pto(run, L, "dd:ffolab", { dur: 420 }), pto(run, L, "dd:ffoshape", { dur: 420, delay: 300 })]);
+    await reveal(run, L, [["dd:fw3", "dd:ffnorm"]], { dur: 420 });
+    await Promise.all([drawIn(run, L, "dd:l1", { dur: 700 }), pto(run, L, "dd:l1shape", { dur: 420, delay: 300 }), pto(run, L, "dd:l1lab", { dur: 420, delay: 380 })]);
+    await pto(run, L, "cap:dffn", { dur: 560 });
+  }
+
+  // ---- 9: that whole layer becomes one block; the stack has six, each with its own weights; the encoder output
+  // reaches the cross-attention of every one of them
+  async function ddLayers(run) {
+    const L = Ld_layers(), t1 = L.get("dd:L1"), box = REG.get("dd:L1");
+    const content = [...REG.values()].filter((o) => o.id && o.o > 0.01 && /^dd:/.test(o.id) && !/^dd:(cr|L\d)/.test(o.id));
+    run.set(box, { ...box.layoutDefaults(), x: 960, y: 516, w: 1180, h: 520, s: 1, o: 0.02, lo: 0, glow: 0 });
+    await Promise.all([run.tween(box, { o: 1 }, { dur: 360 }),
+      ...[...REG.values()].filter((o) => o.id && o.o > 0.01 && /^(cap:|dd:cr)/.test(o.id) && !L.has(o.id)).map((o) => run.morph(o, { o: 0 }, { dur: 360 }))]);
+    if (run.dead) return;
+    await Promise.all([run.tween(box, { x: t1.x, y: t1.y, w: t1.w, h: t1.h, lo: 1, glow: t1.glow }, { dur: 1050 }),
+      zoomObjs(run, content, { cx: 960, cy: 516, tx: t1.x, ty: t1.y, k: 0.12, dur: 1050 }), pto(run, L, "dd:cr4", { dur: 460 })]);
+    if (run.dead) return;
+    await pto(run, L, "cap:dlayers", { dur: 520 });
+    await Promise.all([2, 3, 4, 5, 6].map((k, i) => {
+      const b = REG.get(`dd:L${k}`), t = { ...b.layoutDefaults(), ...L.get(`dd:L${k}`) };
+      run.set(b, { ...t, y: t1.y, o: 0.02 });
+      return run.tween(b, { y: t.y, o: t.o }, { dur: 760, delay: 110 * i });
+    }));
+    await reveal(run, L, [["dd:lup0", "dd:lin0lab"], ["dd:lup1", "dd:lup2", "dd:lup3", "dd:lup4", "dd:lup5"], ["dd:n6", "dd:sublab"]], { dur: 380, gap: 200 });
+    await Promise.all([drawIn(run, L, "dd:E", { dur: 620 }), pto(run, L, "dd:Etag", { dur: 380 })]);
+    await reveal(run, L, [["dd:bus"], [1, 2, 3, 4, 5, 6].map((k) => `dd:tap${k}`), ["dd:buslab"]], { dur: 460, gap: 260 });
+    await pulse(run, "dd:bus", "k", { dur: 760 });
+  }
+
+  // ---- 10: after layer 6, the newest position's 512 numbers → Linear → logits → softmax → next token; it is appended
+  // to the output and fed back as the next decoder input
+  async function ddToken(run) {
+    const L = Ld_token(), hl = REG.get("dd:hl"), th = { ...hl.layoutDefaults(), ...L.get("dd:hl") }, L6 = REG.get("dd:L6");
+    run.set(hl, { ...th, x: L6.x, y: L6.y, s: 0.35, o: 0.02, nu: 0 });
+    await Promise.all([fadeOutsideOf(run, L, 480), run.tween(hl, { x: th.x, y: th.y, s: 1, o: 1 }, { dur: 960 }), run.tween(hl, { nu: 1 }, { dur: 380, delay: 660 }),
+      showAll(run, L, ["dd:hllab", "dd:hlshape", "dd:hlnote"], { dur: 420, delay: 660, stagger: 100 }), pto(run, L, "dd:cr5", { dur: 460 })]);
+    await pto(run, L, "cap:dtoken", { dur: 560 });
+    await run.wait(320);
+    await reveal(run, L, [["dd:tw1"], ["dec:lin", "dd:lindim"], ["dd:tw2"], ["dec:sm", "dd:smdim"], ["dd:tw3"]], { dur: 380, gap: 210 });
+    if (run.dead) return;
+    await Promise.all(DD.next[0].vocab.flatMap((w, k) => [run.morph(`dd:pw${k}`, { ...L.get(`dd:pw${k}`), ...(w === "…" ? {} : { pill: 0 }) }, { dur: 380, delay: 50 * k }),
+      growBar(run, L, `dd:pb${k}`, `dd:pv${k}`, { delay: 60 * k, dur: 860 })]));
+    await Promise.all([pto(run, L, "dd:pnote", { dur: 420 }), pto(run, L, "dd:pw0", { dur: 420, delay: 160 })]);
+    if (run.dead) return;
+    // predict → append: the chosen token joins the output so far
+    const w0 = REG.get("dd:pw0"), o0 = REG.get("outl:0"), to = L.get("outl:0");
+    await pto(run, L, "dd:outtag", { dur: 380 });
+    run.set(o0, { x: w0.x, y: w0.y, s: w0.s, o: 1, pill: 0 });
+    await run.tween(o0, { x: to.x, y: to.y, s: to.s }, { dur: 820 });
+    // → feed back: it becomes the next decoder input (the outputs, shifted right by one)
+    await showAll(run, L, ["dd:intag", "dtok:0"], { dur: 380 });
+    await rideLoop(run, L, "dtok:1", { from: { x: to.x, y: to.y }, dur: 1100 });
+    await pto(run, L, "dd:looplab", { dur: 460 });
+  }
+
+  // ---- 11: t = 2 — two decoder positions; head 1's 2 × 2 scores; the causal mask (−∞) now blocks a real future
+  // position, which softmax turns into exactly 0; the cross-attention weights grow from 1 × s to 2 × s
+  async function ddMask(run) {
+    const L = Ld_mask(), cell = (id) => /^dd:g[cv]\d\d$/.test(id);
+    await fadeOutsideOf(run, L, 440);
+    if (run.dead) return;
+    await Promise.all([showAll(run, L, ["dtok:0", "dtok:1"], { dur: 860 }), drawIn(run, L, "dd:X2", { dur: 760, delay: 380 }), pto(run, L, "dd:X2lab", { dur: 420, delay: 560 }), pto(run, L, "dd:cr6", { dur: 460 })]);
+    await reveal(run, L, [["dd:t2w"], ["dd:t2q", "dd:t2k", "dd:t2v"], ["dd:t2lab"]], { dur: 420, gap: 220 });
+    if (run.dead) return;
+    const stage = (k) => {
+      const G = new Layout();
+      for (let r = 0; r < 2; r++) for (let c = 0; c < 2; c++) {
+        const masked = c > r, src = k === 0 ? `dd.layers.0.self.heads.0.unmasked.${r}.${c}` : `dd.layers.0.self.heads.0.scaled.${r}.${c}`;
+        G.put(`dd:gc${r}${c}`, { ...L.get(`dd:gc${r}${c}`), cls: masked && k > 0 ? "cell-masked" : "cell" })
+          .put(`dd:gv${r}${c}`, { ...L.get(`dd:gv${r}${c}`), src, d: 2, tc: masked && k > 0 ? "masked" : "" });
+      }
+      return G;
+    };
+    const S0 = stage(0), S1 = stage(1);
+    await reveal(run, L, [["dd:gtitle"], ["dd:grl0", "dd:grl1", "dd:gcl0", "dd:gcl1"]], { dur: 380, gap: 140 });
+    // QKᵀ / √64, before the mask …
+    await Promise.all([...S0.keys()].map((id) => run.morph(id, S0.get(id), { dur: 420 })));
+    await run.wait(520);
+    // … the future position (key after the query) becomes −∞ …
+    await Promise.all(["dd:gc01", "dd:gv01"].map((id) => run.morph(id, S1.get(id), { dur: 480 })));
+    await run.wait(520);
+    // … and softmax, row by row: the first position cannot look ahead (exactly 0); the second sees both
+    await Promise.all([...L.keys()].filter(cell).map((id) => pto(run, L, id, { dur: 560, delay: 110 * Number(id.slice(-2, -1)) })));
+    await Promise.all([pto(run, L, "cap:dmask", { dur: 560 }), pto(run, L, "dd:gnote", { dur: 460, delay: 160 })]);
+    if (run.dead) return;
+    const js = [...Array(S_LEN).keys()];
+    await reveal(run, L, [["dd:xtitle"], [...js.map((j) => `dd:xcl${j}`), "dd:xrl0"], js.flatMap((j) => [`dd:xc0${j}`, `dd:xv0${j}`])], { dur: 380, gap: 150 });
+    await run.wait(260);
+    await reveal(run, L, [["dd:xrl1", ...js.flatMap((j) => [`dd:xc1${j}`, `dd:xv1${j}`])], ["dd:xdims"]], { dur: 460, gap: 260 });
+  }
+
+  // ---- 12: after six layers the two rows are still 2 × 512; only the newest row is projected to the vocabulary;
+  // "animal" is appended and fed back, and generation repeats quickly until <END>
+  async function ddNext(run) {
+    const L = Ld_next(), X2 = REG.get("dd:X2"), H2 = REG.get("dd:H2"), tH = { ...H2.layoutDefaults(), ...L.get("dd:H2") };
+    await fadeExcept(run, L, ["dd:X2"], 420);
+    if (run.dead) return;
+    run.set(H2, { ...tH, y: X2.y, o: 0.02, nu: 0, hla: 0, glow: 0 });
+    await Promise.all([run.tween(X2, { y: tH.y, o: 0 }, { dur: 860 }), run.tween(H2, { y: tH.y, o: 1 }, { dur: 860 }), run.tween(H2, { nu: 1 }, { dur: 460, delay: 460 }),
+      showAll(run, L, ["dd:grl0", "dd:grl1", "dd:H2lab"], { dur: 420, delay: 420 }),
+      showAll(run, L, ["dtok:0", "dtok:1"], { dur: 860 }), showAll(run, L, ["dd:intag", "dd:outtag", "outl:0"], { dur: 380, delay: 480 })]);
+    if (run.dead) return;
+    // the newest position only
+    await Promise.all([run.tween(H2, { hla: 1, glow: tH.glow }, { dur: 560 }), pto(run, L, "cap:dnext", { dur: 560 })]);
+    await reveal(run, L, [["dd:tw1"], ["dec:lin", "dd:lindim"], ["dd:tw2"], ["dec:sm", "dd:smdim"], ["dd:tw3"]], { dur: 340, gap: 180 });
+    if (run.dead) return;
+    await Promise.all(DD.next[1].vocab.flatMap((w, k) => [run.morph(`dd:rw${k}`, { ...L.get(`dd:rw${k}`), ...(w === "…" ? {} : { pill: 0 }) }, { dur: 380, delay: 50 * k }),
+      growBar(run, L, `dd:rb${k}`, `dd:rv${k}`, { delay: 60 * k, dur: 820 })]));
+    await Promise.all([pto(run, L, "dd:pnote", { dur: 420 }), pto(run, L, "dd:rw0", { dur: 420, delay: 160 })]);
+    if (run.dead) return;
+    // append "animal", feed it back
+    const w0 = REG.get("dd:rw0"), o1 = REG.get("outl:1"), to1 = L.get("outl:1");
+    run.set(o1, { x: w0.x, y: w0.y, s: w0.s, o: 1, pill: 0 });
+    await run.tween(o1, { x: to1.x, y: to1.y, s: to1.s }, { dur: 760 });
+    await rideLoop(run, L, "dtok:2", { from: { x: to1.x, y: to1.y }, dur: 900 });
+    // and again, quickly: t = 3, 4, 5, 6 — until the end token
+    const steps = [["outl:2", "dtok:3"], ["dd:o3", "dtok:4"], ["dd:o4", "dd:i5"], ["dd:o5", null]], tc = L.get("dd:tcount");
+    for (let i = 0; i < steps.length; i++) {
+      if (run.dead) return;
+      const [out, inp] = steps[i];
+      await Promise.all([run.morph("dd:tcount", { ...tc, text: `t = ${i + 3}` }, { dur: 200 }), pulse(run, "dd:tw2", "n", { dur: 220 })]);
+      await pto(run, L, out, { dur: 260 });
+      if (inp) await pto(run, L, inp, { dur: 260 });
+    }
+    await pto(run, L, "dd:tcount", { dur: 300 });
+  }
+
+  // ---- 13: the shapes for any prefix length t and source length s, and the two sentences to remember
+  async function ddSummary(run) {
+    const L = Ld_summary();
+    await fadeOutsideOf(run, L, 480);
+    if (run.dead) return;
+    await pto(run, L, "dd:sumtitle", { dur: 480 });
+    await Promise.all([...Array(8).keys()].flatMap((k) => [pto(run, L, `dd:sum:a${k}`, { dur: 380, delay: 100 * k }), pto(run, L, `dd:sum:b${k}`, { dur: 380, delay: 100 * k + 60 })]));
+    await pto(run, L, "dd:sumnote", { dur: 380 });
+    await run.wait(260);
+    await pto(run, L, "dd:fin1", { dur: 660 });
+    await pto(run, L, "dd:fin2", { dur: 660, delay: 160 });
+  }
+
   // ---------------------------------------------------------------------------- SCENES
-  const GUIDED_SCENES = 10; // Explore follows the ten guided scenes and the short paper-scale epilogue
+  const GUIDED_SCENES = 10; // the ten guided scenes; then the short paper-scale epilogue, the optional decoder branch, Explore
   const SCENES = [
     { label: "Sentence", title: "Sentence" },
     { label: "Vectors", title: "Vectors" },
@@ -3550,6 +4551,7 @@ body.exploring .ex-hit:hover { fill: rgba(207, 217, 235, 0.05); }
     { label: "Encoder", title: "Encoder layer" },
     { label: "Transformer", title: "Full Transformer" },
     { label: "Paper scale", title: "Paper scale", epilogue: true },
+    { label: "Decoder", title: "Inside the decoder", branch: true },
     { label: "Explore", title: "Explore" },
   ];
   const NOTES = [
@@ -3564,6 +4566,7 @@ body.exploring .ex-hit:hover { fill: rgba(207, 217, 235, 0.05); }
     "Everything so far is one block: multi-head self-attention. Its output is added to its input (residual connection) and normalised: LayerNorm(x + Sublayer(x)). A small feed-forward network acts on each position separately (4→8→4 here, 512→2048→512 in the paper), followed by another Add & Norm. The paper stacks N = 6 such layers; the demo computes one.",
     "A separate translation example: ‘The animal is tired.’ → ‘L’animal est fatigué.’ The decoder masks future positions (−∞ before softmax, exactly 0 after). In cross-attention the queries come from the decoder and the keys and values from the encoder output. The next-token probabilities are illustrative, not from a trained model. Generation is one token at a time: predict, append, feed back.",
     "Epilogue — the same mechanism at the paper's size. Each token is a 512-number vector (X is 8 × 512); each of the 8 heads has its own 512 × 64 W_Q, W_K, W_V, so Q, K, V are 8 × 64 per head and the scores are divided by √64 = 8; the eight 64-wide head outputs are concatenated back to 512 before W^O. These are seeded illustrative values, not trained weights — and the 4-d vector is not a truncated 512-d one: it belongs to a separate, tiny model. The same multi-head attention is used three times: encoder self-attention, masked decoder self-attention, encoder–decoder attention.",
+    "Optional deep dive (I, or the button at the end of the epilogue; Next there skips it). One decoder layer opened up at the paper's sizes — d_model 512, 8 heads, d_k = d_v = 64, d_ff 2048, N = 6 — on Scene 10's example (s = 5 source tokens). At t = 1 the decoder has only <START>: embedding × √512 + PE. Every head projects the whole 512-d vector with its own 512 × 64 W_Q, W_K, W_V (no fixed slices); a 1 × 1 score softmaxes to [1], so the mask has nothing to block yet. Concat 8 × 64 = 512 → W^O → Add & Norm (post-LN). Cross-attention: Q from the decoder, K and V from the encoder output; 1 × s scores ÷ 8, softmax over the source. FFN 512 → 2048 → 512. Six layers, each with its own weights. Only the newest position goes through Linear (512 × |Vocab|; the paper ties it to the embeddings, §3.4) and softmax. At t = 2 the mask blocks a real future position: exactly 0. Seeded illustrative weights and encoder output; illustrative next-token logits.",
     "Explore: click any word (or ↑ / ↓) to make it the query; switch heads; turn positional encoding off; try a different divisor (a what-if experiment — the paper always uses √d_k). Every number is recomputed by the same engine.",
   ];
 
@@ -3818,13 +4821,33 @@ body.exploring .ex-hit:hover { fill: rgba(207, 217, 235, 0.05); }
     { scene: 10, id: "p-qkv", layout: Lp_qkv, play: (run) => paperQKVPlay(run) },
     { scene: 10, id: "p-heads", layout: Lp_heads, play: (run) => paperHeadsPlay(run) },
     { scene: 10, id: "p-uses", layout: Lp_uses, play: (run) => paperUsesPlay(run) },
+    // ---- OPTIONAL BRANCH — INSIDE THE DECODER: one decoder layer at the paper's sizes (illustrative values). Entered with
+    // I or the button at the end of the epilogue; Next there steps over it to Explore.
+    { scene: 11, branch: true, id: "d-start", layout: Ld_start, play: (run) => { run.pace = DD_PACE; return ddStart(run); } },
+    { scene: 11, branch: true, id: "d-heads", layout: Ld_heads, play: (run) => { run.pace = DD_PACE; return ddHeads(run); } },
+    { scene: 11, branch: true, id: "d-t1", layout: Ld_t1, play: (run) => { run.pace = DD_PACE; return ddT1(run); } },
+    { scene: 11, branch: true, id: "d-concat", layout: Ld_concat, play: (run) => { run.pace = DD_PACE; return ddConcat(run); } },
+    { scene: 11, branch: true, id: "d-cross", layout: Ld_cross, play: (run) => { run.pace = DD_PACE; return ddCross(run); } },
+    { scene: 11, branch: true, id: "d-scores", layout: Ld_scores, play: (run) => { run.pace = DD_PACE; return ddScores(run); } },
+    { scene: 11, branch: true, id: "d-values", layout: Ld_values, play: (run) => { run.pace = DD_PACE; return ddValues(run); } },
+    { scene: 11, branch: true, id: "d-ffn", layout: Ld_ffn, play: (run) => { run.pace = DD_PACE; return ddFfn(run); } },
+    { scene: 11, branch: true, id: "d-layers", layout: Ld_layers, play: (run) => { run.pace = DD_PACE; return ddLayers(run); } },
+    { scene: 11, branch: true, id: "d-token", layout: Ld_token, play: (run) => { run.pace = DD_PACE; return ddToken(run); } },
+    { scene: 11, branch: true, id: "d-mask", layout: Ld_mask, play: (run) => { run.pace = DD_PACE; return ddMask(run); } },
+    { scene: 11, branch: true, id: "d-next", layout: Ld_next, play: (run) => { run.pace = DD_PACE; return ddNext(run); } },
+    { scene: 11, branch: true, id: "d-summary", layout: Ld_summary, play: (run) => { run.pace = DD_PACE; return ddSummary(run); } },
     // ---- EXPLORE — the same calculation, live
-    { scene: 11, id: "explore", layout: L_explore, play: (run) => enterExplore(run) },
+    { scene: 12, id: "explore", layout: L_explore, play: (run) => enterExplore(run) },
   ];
+  // The optional branch sits between the epilogue and Explore; the main path steps over it.
+  const BRANCH = { first: BEATS.findIndex((b) => b.branch), last: BEATS.findLastIndex((b) => b.branch) };
 
   // ---------------------------------------------------------------------------- DIRECTOR (navigation)
   const director = {
     gen: 0, index: -1, run: null, autoplay: false,
+    viaBranch: false, // Explore was entered from the end of the branch (so Previous returns there)
+    nextOf(i) { return i === BRANCH.first - 1 ? BRANCH.last + 1 : i + 1; },
+    prevOf(i) { return i === BRANCH.first ? BRANCH.first - 1 : i === BRANCH.last + 1 && !this.viaBranch ? BRANCH.first - 1 : i - 1; },
     async play(i) {
       this.gen++;
       const run = new Run(this.gen);
@@ -3865,19 +4888,32 @@ body.exploring .ex-hit:hover { fill: rgba(207, 217, 235, 0.05); }
     next() {
       if (clock.frozen) freeze(false);
       if (this.run) { this.skip(); return; }
-      if (this.index < BEATS.length - 1) this.play(this.index + 1);
-      else toast("Explore: click any word, or use the controls above.");
+      if (this.index < BEATS.length - 1) {
+        const j = this.nextOf(this.index);
+        if (j === BRANCH.last + 1) this.viaBranch = this.index === BRANCH.last;
+        this.play(j);
+      } else toast("Explore: click any word, or use the controls above.");
     },
     explore() {
       this.autoplay = false;
       const i = BEATS.findIndex((b) => b.id === "explore");
       if (this.index === i) return;
-      if (this.index === i - 1 && !this.run) this.play(i); else this.jump(i, 900);
+      const from = this.index;
+      this.viaBranch = from === BRANCH.last;
+      if ((from === BRANCH.first - 1 || from === BRANCH.last) && !this.run) this.play(i); else this.jump(i, 900);
+    },
+    // the optional branch always starts from the full Transformer of the epilogue's last beat
+    decoder() {
+      this.autoplay = false;
+      if (clock.frozen) freeze(false);
+      if (BEATS[this.index]?.branch) { toast("Inside the decoder: Next to continue, E for Explore."); return; }
+      this.jump(BRANCH.first - 1, 0);
+      this.play(BRANCH.first);
     },
     prev() {
       if (clock.frozen) freeze(false);
       this.autoplay = false;
-      this.jump(Math.max(0, this.index - 1));
+      this.jump(Math.max(0, this.prevOf(this.index)));
     },
     jump(i, dur = 700) {
       this.gen++;
@@ -3902,11 +4938,11 @@ body.exploring .ex-hit:hover { fill: rgba(207, 217, 235, 0.05); }
         if (this.run) await this.run.done;
         if (!this.autoplay) break;
         const b = BEATS[this.index];
-        const atSceneEnd = this.index === BEATS.length - 1 || BEATS[this.index + 1].scene !== b.scene;
+        const atSceneEnd = this.index === BEATS.length - 1 || BEATS[this.nextOf(this.index)].scene !== b.scene;
         if (atSceneEnd) break;
         await wait(b.dwell ?? 2600);
         if (!this.autoplay || this.run) continue;
-        this.play(this.index + 1);
+        this.play(this.nextOf(this.index));
       }
       this.autoplay = false;
       hud.update();
@@ -3917,8 +4953,12 @@ body.exploring .ex-hit:hover { fill: rgba(207, 217, 235, 0.05); }
       this.autoplay = true;
       hud.update();
       const b = BEATS[this.index];
-      const atSceneEnd = this.index === BEATS.length - 1 || BEATS[this.index + 1].scene !== b.scene;
-      if (atSceneEnd && this.index < BEATS.length - 1) this.play(this.index + 1);
+      const atSceneEnd = this.index === BEATS.length - 1 || BEATS[this.nextOf(this.index)].scene !== b.scene;
+      if (atSceneEnd && this.index < BEATS.length - 1) {
+        const j = this.nextOf(this.index);
+        if (j === BRANCH.last + 1) this.viaBranch = this.index === BRANCH.last;
+        this.play(j);
+      }
       this.autoplayLoop();
     },
   };
@@ -3942,8 +4982,12 @@ body.exploring .ex-hit:hover { fill: rgba(207, 217, 235, 0.05); }
         b.type = "button";
         b.textContent = s.label;
         b.dataset.scene = k;
-        b.title = k < GUIDED_SCENES ? `${k + 1}. ${s.title}` : s.epilogue ? `Epilogue: ${s.title}` : `${s.title} (E)`;
-        b.addEventListener("click", () => { director.autoplay = false; director.jump(BEATS.findIndex((x) => x.scene === k)); });
+        b.title = k < GUIDED_SCENES ? `${k + 1}. ${s.title}` : s.epilogue ? `Epilogue: ${s.title}` : s.branch ? `Optional: ${s.title} (I)` : `${s.title} (E)`;
+        if (s.branch) b.classList.add("branch");
+        b.addEventListener("click", () => {
+          director.autoplay = false;
+          if (s.branch) director.decoder(); else director.jump(BEATS.findIndex((x) => x.scene === k));
+        });
         nav.appendChild(b);
       });
       this.built = true;
@@ -3953,7 +4997,7 @@ body.exploring .ex-hit:hover { fill: rgba(207, 217, 235, 0.05); }
       const beat = BEATS[i];
       const sc = SCENES[beat.scene];
       const st = REG.get("status");
-      st.t.textContent = beat.scene < GUIDED_SCENES ? `${beat.scene + 1} / ${GUIDED_SCENES}  ·  ${sc.title}` : sc.epilogue ? `Epilogue  ·  ${sc.title}` : sc.title;
+      st.t.textContent = beat.scene < GUIDED_SCENES ? `${beat.scene + 1} / ${GUIDED_SCENES}  ·  ${sc.title}` : sc.epilogue ? `Epilogue  ·  ${sc.title}` : sc.branch ? `Optional  ·  ${sc.title}` : sc.title;
       const ex = beat.id === "explore";
       $("explore-ui").hidden = !ex;
       document.body.classList.toggle("exploring", ex);
@@ -3962,7 +5006,7 @@ body.exploring .ex-hit:hover { fill: rgba(207, 217, 235, 0.05); }
       document.querySelectorAll("#timeline button[data-scene]").forEach((b) => {
         const k = Number(b.dataset.scene);
         b.classList.toggle("current", k === beat.scene);
-        b.classList.toggle("past", k < beat.scene);
+        b.classList.toggle("past", k < beat.scene && !SCENES[k].branch); // the optional branch is never "passed"
         if (k === beat.scene) b.setAttribute("aria-current", "step"); else b.removeAttribute("aria-current");
       });
       const playing = !clock.frozen && (director.autoplay || director.run);
@@ -3970,6 +5014,7 @@ body.exploring .ex-hit:hover { fill: rgba(207, 217, 235, 0.05); }
       $("btn-play").setAttribute("aria-label", playing ? "Pause (Space)" : "Play (Space)");
       $("btn-prev").disabled = director.index <= 0 && !director.run;
       $("btn-calc").setAttribute("aria-pressed", String(ui.showCalc));
+      $("dd-btn").hidden = beat.id !== "p-uses";
       const inPE = beat.scene === 2;
       $("pe-math-btn").hidden = !inPE;
       if (!inPE && ui.peMath) setPeMath(false);
@@ -3988,7 +5033,7 @@ body.exploring .ex-hit:hover { fill: rgba(207, 217, 235, 0.05); }
       const el = $("notes");
       el.hidden = !this.open;
       if (!this.open) return;
-      el.innerHTML = `<h2>Presenter notes · ${beat.scene < GUIDED_SCENES ? `${beat.scene + 1}. ` : SCENES[beat.scene].epilogue ? "Epilogue · " : ""}${SCENES[beat.scene].title}</h2><p>${NOTES[beat.scene] ?? ""}</p><p style="color:var(--ink-faint)">beat ${director.index + 1}/${BEATS.length} · ${beat.id} · N to hide</p>`;
+      el.innerHTML = `<h2>Presenter notes · ${beat.scene < GUIDED_SCENES ? `${beat.scene + 1}. ` : SCENES[beat.scene].epilogue ? "Epilogue · " : SCENES[beat.scene].branch ? "Optional · " : ""}${SCENES[beat.scene].title}</h2><p>${NOTES[beat.scene] ?? ""}</p><p style="color:var(--ink-faint)">beat ${director.index + 1}/${BEATS.length} · ${beat.id} · N to hide</p>`;
     },
   };
   const debug = {
@@ -4025,6 +5070,13 @@ body.exploring .ex-hit:hover { fill: rgba(207, 217, 235, 0.05); }
       html += `<p>Epilogue (paper scale): seeded illustrative values, not trained weights; PE is the paper's formula at d_model = ${PD.dModel}. Only the columns shown on screen are listed.</p>`;
       html += this.table(`paper X = E + PE (${N}×${PD.dModel})`, pick(PAPER.X, pX), TOKENS, pX.map((c) => `d${c}`));
       html += this.table(`paper head 1: Q (${N}×${PD.dK})`, pick(PAPER.heads[0].Q, pQ), TOKENS, pQ.map((c) => `q${c}`));
+      // optional branch: inside the decoder (same sizes; seeded illustrative weights and encoder output)
+      const s0 = DD.layers[0].self.heads[0], c0 = DD.layers[0].cross.heads[0];
+      html += `<p>Inside the decoder (optional branch): d_ff = ${PD.dFF}, N = ${PD.layers}; seeded illustrative weights and encoder output, illustrative next-token logits. Source length s = ${S_LEN}, prefix length t = ${DD.prefix.length}.</p>`;
+      html += this.table(`decoder input x = embedding · √${PD.dModel} + PE (t×${PD.dModel})`, pick(DD.X0, pX), DD.prefix, pX.map((c) => `d${c}`));
+      html += this.table("layer 1, masked self-attention, head 1: softmax(QKᵀ/√64 + mask)", s0.A, DD.prefix, DD.prefix, 4);
+      html += this.table("layer 1, encoder–decoder attention, head 1: weights over the source (t×s)", c0.A, DD.prefix, DD.source, 4);
+      DD.next.forEach((nx) => { html += this.table(`next token at t = ${nx.t} (illustrative; from row ${nx.row + 1}, the newest)`, [nx.probs], ["p"], nx.vocab, 4); });
       el.innerHTML = html;
       $("dbg-audit").addEventListener("click", () => this.render());
     },
@@ -4035,11 +5087,12 @@ body.exploring .ex-hit:hover { fill: rgba(207, 217, 235, 0.05); }
       <p class="lead">Built with LLM coding assistance.</p>
       <p>The demo uses a scaled-down Transformer attention calculation with pedagogical parameters. The mathematical operations follow Vaswani et al. (2017).</p>
       <p>Tiny teaching model — dimensions reduced so every calculation can be shown (d_model = 4, 2 heads, d_k = d_v = 2; the paper's base model uses 512, 8, 64). The mechanism is real Transformer attention. The small vectors and weights are illustrative teaching values, not weights from the original trained model.</p>
+      <p>The optional “Inside the decoder” branch (I, after the epilogue) follows one decoder layer at the paper's sizes (d_ff = ${E.CONFIG.paper.dFF}, N = ${E.CONFIG.paper.layers} layers) on the Scene 10 example, with seeded illustrative weights, an illustrative encoder output and illustrative next-token logits. The shapes, the causal mask and the post-LN Add &amp; Norm follow the paper.</p>
       <p>The short paper-scale epilogue repeats the same operations at the paper's sizes (d_model = ${E.CONFIG.paper.dModel}, ${E.CONFIG.paper.nHeads} heads, d_k = d_v = ${E.CONFIG.paper.dK}) with seeded illustrative values — not trained weights. Its positional encoding is the paper's formula; only the first entries and the last entry of each vector are shown.</p>
       <p>What we asked the coding assistant to build:</p><p class="edit">${DISCLOSURE.asked}</p>
       <p>What we manually checked or fixed:</p><p class="edit">${DISCLOSURE.checked}</p>
       <label><input type="checkbox" id="force-motion" ${ui.forceMotion ? "checked" : ""}> Animate even when the system asks for reduced motion${reduceMQ.matches ? " (reduced motion is on)" : ""}</label>
-      <dl><dt>→ / PgDn</dt><dd>next step (finishes a running animation first)</dd><dt>← / PgUp</dt><dd>previous step</dd><dt>Space</dt><dd>play / pause</dd><dt>C</dt><dd>show calculation (slower, 3 decimals)</dd><dt>R</dt><dd>restart</dd><dt>F</dt><dd>fullscreen</dd><dt>N</dt><dd>presenter notes</dd><dt>D</dt><dd>verification panel</dd><dt>M</dt><dd>positional-encoding formula (Scene 3)</dd><dt>E</dt><dd>Explore mode</dd><dt>↑ / ↓</dt><dd>in Explore: previous / next word as the query</dd></dl>
+      <dl><dt>→ / PgDn</dt><dd>next step (finishes a running animation first)</dd><dt>← / PgUp</dt><dd>previous step</dd><dt>Space</dt><dd>play / pause</dd><dt>C</dt><dd>show calculation (slower, 3 decimals)</dd><dt>R</dt><dd>restart</dd><dt>F</dt><dd>fullscreen</dd><dt>N</dt><dd>presenter notes</dd><dt>D</dt><dd>verification panel</dd><dt>M</dt><dd>positional-encoding formula (Scene 3)</dd><dt>E</dt><dd>Explore mode</dd><dt>I</dt><dd>optional deep dive: inside the decoder (Next at the end of the epilogue skips it)</dd><dt>↑ / ↓</dt><dd>in Explore: previous / next word as the query</dd></dl>
       <button type="button" id="about-close">Close</button>`;
     el.hidden = false;
     $("about-close").addEventListener("click", closeAbout);
@@ -4071,7 +5124,7 @@ body.exploring .ex-hit:hover { fill: rgba(207, 217, 235, 0.05); }
     for (const el of document.querySelectorAll("#stage [data-alpha]")) {
       if (!shown(el)) continue;
       const a = val(el.dataset.alpha), kind = el.dataset.kind;
-      const want = kind === "bar" ? barLen(a) : kind === "pbar" ? probLen(a) : kind === "xbar" ? exBarLen(a) : alphaWidth(a);
+      const want = kind === "bar" ? barLen(a) : kind === "pbar" ? probLen(a) : kind === "xbar" ? exBarLen(a) : kind === "cbar" ? crossBarLen(a) : alphaWidth(a);
       const got = kind === "wire" ? parseFloat(el.style.strokeWidth) : parseFloat(el.getAttribute("width"));
       geometry.checked++;
       if (!(Math.abs(got - want) < 0.05)) geometry.mismatches.push({ src: el.dataset.alpha, kind, got, want });
@@ -4101,6 +5154,7 @@ body.exploring .ex-hit:hover { fill: rgba(207, 217, 235, 0.05); }
     $("btn-about").addEventListener("click", about);
     $("pe-math-btn").addEventListener("click", () => setPeMath(!ui.peMath));
     $("btn-explore").addEventListener("click", () => director.explore());
+    $("dd-btn").addEventListener("click", () => director.decoder());
     document.querySelectorAll("#explore-ui [data-head]").forEach((b) => b.addEventListener("click", () => { const h = Number(b.dataset.head); if (h !== EX.h) exploreDo("head", () => { EX.h = h; }); }));
     document.querySelectorAll("#explore-ui [data-pos]").forEach((b) => b.addEventListener("click", () => { const on = b.dataset.pos === "1"; if (on !== EX.pos) exploreDo("pos", () => { EX.pos = on; }); }));
     document.querySelectorAll("#explore-ui [data-scale]").forEach((b) => b.addEventListener("click", () => { const m = b.dataset.scale; if (m !== EX.scale) exploreDo("scale", () => { EX.scale = m; }); }));
@@ -4122,6 +5176,7 @@ body.exploring .ex-hit:hover { fill: rgba(207, 217, 235, 0.05); }
         d: () => { debug.open = !debug.open; debug.render(); }, D: () => { debug.open = !debug.open; debug.render(); },
         m: () => { if (!$("pe-math-btn").hidden) setPeMath(!ui.peMath); }, M: () => { if (!$("pe-math-btn").hidden) setPeMath(!ui.peMath); },
         e: () => director.explore(), E: () => director.explore(),
+        i: () => director.decoder(), I: () => director.decoder(),
         ArrowUp: () => { if (inExplore()) exploreSelect((EX.q + N - 1) % N); },
         ArrowDown: () => { if (inExplore()) exploreSelect((EX.q + 1) % N); },
         Escape: () => { if (ui.peMath) setPeMath(false); },
@@ -4144,7 +5199,11 @@ body.exploring .ex-hit:hover { fill: rgba(207, 217, 235, 0.05); }
   // ---------------------------------------------------------------------------- TEST HOOKS (used by tests/browser.mjs)
   globalThis.__demo = {
     get index() { return director.index; },
-    get beats() { return BEATS.map((b) => ({ scene: b.scene, id: b.id })); },
+    get beats() { return BEATS.map((b) => ({ scene: b.scene, id: b.id, branch: !!b.branch })); },
+    nextOf: (i) => director.nextOf(i),
+    prevOf: (i) => director.prevOf(i),
+    decoder: () => director.decoder(),
+    get decoderExample() { return { source: [...DD.source], prefix: [...DD.prefix], generated: [...DD.generated] }; },
     idle: () => !director.run && !clock.tweens.size && !clock.timers.size,
     next: () => director.next(),
     prev: () => director.prev(),
@@ -4166,7 +5225,7 @@ body.exploring .ex-hit:hover { fill: rgba(207, 217, 235, 0.05); }
         if (o instanceof VectorObj) Object.assign(st, { src: src(o.src), d: o.d, orient: o.orient, bw: n(o.bw), pl: Math.round(o.pl * 100) / 100 });
         if (o instanceof NumObj) Object.assign(st, { src: src(o.src), d: o.d });
         if (o instanceof BarObj) st.w = n(o.w);
-        if (o instanceof TokenObj) st.pill = Math.round(o.pill * 100) / 100;
+        if (o instanceof TokenObj) Object.assign(st, { pill: Math.round(o.pill * 100) / 100, text: o.t.textContent });
         if (o instanceof TextObj) st.text = o.t.textContent;
         const r100 = (v) => Math.round(v * 100) / 100;
         if (o instanceof CMatObj) Object.assign(st, { c: r100(o.c), so: r100(o.so), nu: r100(o.nu), ix: r100(o.ix), hla: r100(o.hla), draw: r100(o.draw), glow: r100(o.glow) });
